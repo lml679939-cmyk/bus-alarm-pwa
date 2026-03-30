@@ -74,13 +74,19 @@
   padding: 0;
 }
 
-html, body {
+html {
   height: 100%;
+}
+
+body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;           /* 讓捲動只發生在 .panel 內，不是整個 body */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC',
                'PingFang TC', sans-serif;
   background: var(--bg-body);
   color: var(--text-primary);
-  /* 避免 iOS 雙擊縮放 */
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
@@ -89,10 +95,8 @@ html, body {
    頂部標題列
    ============================================================ */
 .app-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  /* 改為 flex 子元素，不再 fixed，高度固定不縮放 */
+  flex-shrink: 0;
   height: var(--header-h);
   background: var(--bg-header);
   color: var(--text-on-dark);
@@ -158,22 +162,23 @@ html, body {
    地圖
    ============================================================ */
 #map {
-  position: fixed;
-  top: var(--header-h);
-  left: 0;
-  right: 0;
+  /* flex 子元素，高度固定，Leaflet 可正確計算尺寸 */
+  flex-shrink: 0;
   height: var(--map-h);
+  width: 100%;
+  position: relative; /* 讓 .map-hint-bar 可以 absolute 定位在地圖底部 */
   z-index: 1;
   background: #dce8f0;
 }
 
-/* 地圖選點提示條 */
+/* 地圖選點提示條（貼在地圖底部） */
 .map-hint-bar {
-  position: fixed;
-  top: calc(var(--header-h) + var(--map-h) - 44px);
+  position: absolute;
+  bottom: 0;
   left: 0;
   right: 0;
   height: 44px;
+  z-index: 500;
   background: rgba(21,101,192,.92);
   color: #fff;
   display: flex;
@@ -200,16 +205,12 @@ html, body {
    主面板（地圖下方可捲動區域）
    ============================================================ */
 .panel {
-  position: absolute;
-  top: calc(var(--header-h) + var(--map-h));
-  left: 0;
-  right: 0;
-  /* 底部留出 iOS 安全區 */
-  padding: 16px 16px calc(env(safe-area-inset-bottom) + 24px);
-  background: var(--bg-body);
-  min-height: calc(100vh - var(--header-h) - var(--map-h));
+  /* 填滿 header + map 以下的剩餘空間，並允許內容捲動 */
+  flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding: 16px 16px calc(env(safe-area-inset-bottom) + 24px);
+  background: var(--bg-body);
 }
 
 /* ============================================================
@@ -742,13 +743,14 @@ html, body {
    跑馬燈（監聽中脈衝） — 套在 map 邊框上
    ============================================================ */
 #map.monitoring {
-  box-shadow: inset 0 0 0 3px #1565c0;
+  outline: 3px solid #1565c0;
+  outline-offset: -3px;
   animation: map-pulse 2s infinite;
 }
 
 @keyframes map-pulse {
-  0%, 100% { box-shadow: inset 0 0 0 3px rgba(21,101,192,.8); }
-  50%       { box-shadow: inset 0 0 0 3px rgba(21,101,192,.2); }
+  0%, 100% { outline-color: rgba(21,101,192,.9); }
+  50%       { outline-color: rgba(21,101,192,.2); }
 }
 
 /* ============================================================

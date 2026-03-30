@@ -18,9 +18,8 @@
   <!-- iOS 主畫面圖示（需要 PNG） -->
   <link rel="apple-touch-icon" href="icons/icon-192.png">
 
-  <!-- Leaflet 地圖 CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <!-- Leaflet 地圖 CSS（改用 cdnjs，移除 integrity 避免 hash 驗證失敗） -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 
   <link rel="stylesheet" href="style.css">
 </head>
@@ -187,9 +186,8 @@
   <!-- ===== Toast 訊息 ===== -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqM=" crossorigin=""></script>
+  <!-- Leaflet JS（改用 cdnjs） -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
   <!-- 主程式 -->
   <script src="app.js"></script>

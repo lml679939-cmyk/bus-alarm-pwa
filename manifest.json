@@ -1,0 +1,42 @@
+{
+  "name": "公車到站 GPS 提醒",
+  "short_name": "公車提醒",
+  "description": "搭公車睡著也不怕！設定家門口位置，快到站時震動叫醒你。",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f0f4f8",
+  "theme_color": "#1565c0",
+  "orientation": "portrait-primary",
+  "lang": "zh-TW",
+  "categories": ["utilities", "navigation"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "啟動回家模式",
+      "short_name": "回家",
+      "description": "快速啟動 GPS 監聽",
+      "url": "./index.html",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

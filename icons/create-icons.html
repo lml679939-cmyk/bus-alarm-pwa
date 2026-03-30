@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>圖示產生器 — 公車到站提醒</title>
+  <style>
+    body { font-family: sans-serif; padding: 24px; background: #f0f4f8; }
+    h1   { margin-bottom: 8px; }
+    p    { color: #555; margin-bottom: 20px; }
+    .btn {
+      display: inline-block; padding: 12px 24px; background: #1565c0;
+      color: #fff; border: none; border-radius: 10px; font-size: 16px;
+      cursor: pointer; margin: 8px 4px;
+    }
+    .btn:hover { background: #0d47a1; }
+    canvas { display: none; }
+    .preview { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 20px; }
+    .preview img { border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  </style>
+</head>
+<body>
+  <h1>🚌 PWA 圖示產生器</h1>
+  <p>點擊下方按鈕，自動產生並下載 icon-192.png 和 icon-512.png，<br>
+     下載後把兩個 PNG 檔案放回 icons/ 資料夾即可。</p>
+
+  <button class="btn" onclick="generate(192)">⬇️ 下載 icon-192.png</button>
+  <button class="btn" onclick="generate(512)">⬇️ 下載 icon-512.png</button>
+  <button class="btn" onclick="generateAll()" style="background:#2e7d32">⬇️ 一次下載兩個</button>
+
+  <div class="preview" id="preview"></div>
+
+  <!-- Canvas 用於繪製圖示 -->
+  <canvas id="canvas"></canvas>
+
+  <script>
+    /**
+     * 用 Canvas 繪製圖示並下載為 PNG
+     * @param {number} size 圖示尺寸（192 或 512）
+     */
+    function generate(size) {
+      const canvas = document.getElementById('canvas');
+      canvas.width  = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      const s = size / 512; // 縮放比例（以 512 為基準）
+
+      // ---- 背景：圓角矩形 ----
+      const r = 96 * s;
+      ctx.beginPath();
+      ctx.moveTo(r, 0);
+      ctx.lineTo(size - r, 0);
+      ctx.arcTo(size, 0, size, r, r);
+      ctx.lineTo(size, size - r);
+      ctx.arcTo(size, size, size - r, size, r);
+      ctx.lineTo(r, size);
+      ctx.arcTo(0, size, 0, size - r, r);
+      ctx.lineTo(0, r);
+      ctx.arcTo(0, 0, r, 0, r);
+      ctx.closePath();
+      ctx.fillStyle = '#1565c0';
+      ctx.fill();
+
+      // ---- 車身 ----
+      roundRect(ctx, 80*s, 180*s, 352*s, 200*s, 28*s, '#ffffff');
+
+      // ---- 車頂 ----
+      roundRect(ctx, 100*s, 140*s, 312*s, 55*s, 16*s, '#e3f2fd');
+
+      // ---- 車窗 ----
+      const winY  = 198*s, winH = 60*s, winW = 80*s, winR = 10*s;
+      roundRect(ctx, 110*s, winY, winW, winH, winR, '#90caf9');
+      roundRect(ctx, 216*s, winY, winW, winH, winR, '#90caf9');
+      roundRect(ctx, 322*s, winY, winW, winH, winR, '#90caf9');
+
+      // ---- 車門 ----
+      roundRect(ctx, 206*s, 272*s, 100*s, 108*s, 8*s, '#bbdefb');
+      ctx.strokeStyle = '#64b5f6';
+      ctx.lineWidth   = 4*s;
+      ctx.strokeRect(206*s + 2*s, 272*s + 2*s, 100*s - 4*s, 108*s - 4*s);
+
+      // ---- 車輪 ----
+      wheel(ctx, 150*s, 388*s, 42*s);
+      wheel(ctx, 362*s, 388*s, 42*s);
+
+      // ---- 鈴鐺背景圓 ----
+      ctx.beginPath();
+      ctx.arc(400*s, 108*s, 56*s, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffd54f';
+      ctx.fill();
+
+      // ---- Emoji 文字（鈴鐺） ----
+      ctx.font = `${60*s}px "Segoe UI Emoji","Apple Color Emoji",sans-serif`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🔔', 400*s, 112*s);
+
+      // ---- 下載 ----
+      const link = document.createElement('a');
+      link.download = `icon-${size}.png`;
+      link.href     = canvas.toDataURL('image/png');
+      link.click();
+
+      // ---- 預覽 ----
+      const img    = document.createElement('img');
+      img.src      = canvas.toDataURL('image/png');
+      img.width    = Math.min(size, 128);
+      img.height   = Math.min(size, 128);
+      img.title    = `icon-${size}.png`;
+      const preview = document.getElementById('preview');
+      // 移除舊的相同尺寸預覽
+      preview.querySelectorAll(`img[data-size="${size}"]`).forEach(el => el.remove());
+      img.dataset.size = size;
+      preview.appendChild(img);
+    }
+
+    function generateAll() {
+      generate(192);
+      setTimeout(() => generate(512), 300);
+    }
+
+    /** 繪製圓角矩形 */
+    function roundRect(ctx, x, y, w, h, r, fill) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.arcTo(x + w, y,     x + w, y + r,     r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+      ctx.lineTo(x + r, y + h);
+      ctx.arcTo(x,     y + h, x,       y + h - r, r);
+      ctx.lineTo(x,     y + r);
+      ctx.arcTo(x,     y,     x + r,   y,         r);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+
+    /** 繪製車輪 */
+    function wheel(ctx, cx, cy, r) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#37474f';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#90a4ae';
+      ctx.fill();
+    }
+
+    // 頁面載入時自動預覽（不下載）
+    window.addEventListener('load', () => {
+      // 靜默預覽 192px
+      setTimeout(() => {
+        const canvas = document.getElementById('canvas');
+        generate(192);
+      }, 100);
+    });
+  </script>
+</body>
+</html>

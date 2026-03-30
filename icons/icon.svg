@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 背景圓角矩形 -->
+  <rect width="512" height="512" rx="96" ry="96" fill="#1565c0"/>
+
+  <!-- 公車圖形 -->
+  <!-- 車身 -->
+  <rect x="80" y="160" width="352" height="220" rx="28" ry="28" fill="#ffffff"/>
+  <!-- 車頂 -->
+  <rect x="100" y="120" width="312" height="60" rx="16" ry="16" fill="#e3f2fd"/>
+  <!-- 車窗（左） -->
+  <rect x="110" y="178" width="90" height="65" rx="10" ry="10" fill="#bbdefb"/>
+  <!-- 車窗（中） -->
+  <rect x="210" y="178" width="90" height="65" rx="10" ry="10" fill="#bbdefb"/>
+  <!-- 車窗（右） -->
+  <rect x="310" y="178" width="90" height="65" rx="10" ry="10" fill="#bbdefb"/>
+  <!-- 車門 -->
+  <rect x="200" y="265" width="110" height="115" rx="8" ry="8" fill="#e3f2fd" stroke="#90caf9" stroke-width="4"/>
+  <!-- 車輪（左） -->
+  <circle cx="150" cy="390" r="45" fill="#37474f"/>
+  <circle cx="150" cy="390" r="22" fill="#90a4ae"/>
+  <!-- 車輪（右） -->
+  <circle cx="362" cy="390" r="45" fill="#37474f"/>
+  <circle cx="362" cy="390" r="22" fill="#90a4ae"/>
+
+  <!-- 🔔 鈴鐺（右上角） -->
+  <circle cx="400" cy="108" r="56" fill="#ffd54f"/>
+  <text x="400" y="128" text-anchor="middle" font-size="64" font-family="Segoe UI Emoji,Apple Color Emoji,sans-serif">🔔</text>
+</svg>

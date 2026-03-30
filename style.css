@@ -948,6 +948,152 @@ body {
 }
 
 /* ============================================================
+   音效選擇器
+   ============================================================ */
+.sound-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.sound-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-section);
+  cursor: pointer;
+  transition: all var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sound-btn:active { transform: scale(.94); }
+
+.sound-btn.active {
+  border-color: var(--color-primary);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 3px rgba(21,101,192,.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  .sound-btn.active {
+    border-color: #90caf9;
+    background: #1a3a6b;
+    box-shadow: 0 0 0 3px rgba(144,202,249,.18);
+  }
+}
+
+.sound-emoji {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.sound-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.2;
+  white-space: normal;
+  word-break: keep-all;
+}
+
+.sound-btn.active .sound-name {
+  color: var(--color-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+  .sound-btn.active .sound-name { color: #90caf9; }
+}
+
+/* ============================================================
+   耳機模式區塊
+   ============================================================ */
+.headphone-block {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.headphone-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.headphone-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.headphone-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.headphone-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* 偵測狀態條 */
+.headphone-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  background: var(--bg-section);
+  border: 1px solid var(--border);
+}
+
+.headphone-status[data-state="ok"] {
+  background: rgba(46,125,50,.1);
+  border-color: #4caf50;
+  color: #2e7d32;
+}
+
+.headphone-status[data-state="warn"] {
+  background: rgba(198,40,40,.08);
+  border-color: #ef5350;
+  color: #c62828;
+}
+
+.headphone-status[data-state="unknown"] {
+  background: rgba(245,127,23,.08);
+  border-color: #ffa726;
+  color: #e65100;
+}
+
+@media (prefers-color-scheme: dark) {
+  .headphone-status[data-state="ok"] {
+    background: rgba(46,125,50,.2);
+    color: #81c784;
+  }
+  .headphone-status[data-state="warn"] {
+    background: rgba(198,40,40,.2);
+    color: #ef9a9a;
+  }
+  .headphone-status[data-state="unknown"] {
+    background: rgba(245,127,23,.15);
+    color: #ffcc80;
+  }
+}
+
+/* ============================================================
    RWD：較大螢幕（平板+）
    ============================================================ */
 @media (min-width: 600px) {

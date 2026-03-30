@@ -14,18 +14,21 @@
    全域狀態
    ============================================================ */
 const State = {
-  destination:   null,   // { lat, lng, name } 目的地
-  currentLoc:    null,   // { lat, lng, accuracy } 目前 GPS 位置
-  radius:        500,    // 第1段提醒半徑（公尺）
-  INNER_RADIUS:  200,    // 第2段加強半徑（固定）
-  isMonitoring:  false,
-  alertPhase:    0,      // 0=未觸發 1=第1段 2=第2段
-  watchId:       null,
-  wakeLock:      null,
-  mapSelectMode: false,
-  audioCtx:      null,
-  vibrateLoop:   null,
-  searchDebounce: null,  // 搜尋防抖 timer
+  destination:         null,      // { lat, lng, name } 目的地
+  currentLoc:          null,      // { lat, lng, accuracy } 目前 GPS 位置
+  radius:              500,       // 第1段提醒半徑（公尺）
+  INNER_RADIUS:        200,       // 第2段加強半徑（固定）
+  isMonitoring:        false,
+  alertPhase:          0,         // 0=未觸發 1=第1段 2=第2段
+  watchId:             null,
+  wakeLock:            null,
+  mapSelectMode:       false,
+  audioCtx:            null,
+  vibrateLoop:         null,
+  searchDebounce:      null,      // 搜尋防抖 timer
+  selectedSound:       'melody',  // 選取的音效 key
+  headphoneMode:       false,     // 耳機模式開關
+  headphonesConnected: false,     // 目前是否偵測到耳機
 };
 
 /* ---- 震動 Pattern ---- */
@@ -454,30 +457,253 @@ function stopVibrateLoop() {
 }
 
 /* ============================================================
-   音效（Web Audio API）
+   音效系統（Web Audio API）
+   五種音效 + 耳機偵測模式
    ============================================================ */
-function playAlertSound(phase) {
+
+/* ---- 音效目錄（key → { name, fn(ctx, phase) }） ---- */
+const SOUNDS = {
+
+  /** 🎵 上升音階：三音漸升，第2段五音 */
+  melody: {
+    name: '🎵 上升音階',
+    fn(ctx, phase) {
+      const notes = phase === 1
+        ? [880, 1100, 1320]
+        : [880, 1047, 1320, 1568, 1760];
+      notes.forEach((f, i) =>
+        oscBeep(ctx, ctx.currentTime + i * 0.32, 0.28, f, 'sine', 0.65));
+    },
+  },
+
+  /** 🚨 急促警報：方波快速交替，像電子鬧鐘 */
+  alarm: {
+    name: '🚨 急促警報',
+    fn(ctx, phase) {
+      const count = phase === 1 ? 5 : 10;
+      for (let i = 0; i < count; i++) {
+        oscBeep(ctx, ctx.currentTime + i * 0.22, 0.16,
+          i % 2 === 0 ? 1500 : 1100, 'square', 0.38);
+      }
+    },
+  },
+
+  /** 🔔 鈴聲：正弦波帶長尾音，模擬門鈴 */
+  bell: {
+    name: '🔔 鈴聲',
+    fn(ctx, phase) {
+      const count = phase === 1 ? 3 : 5;
+      for (let i = 0; i < count; i++) {
+        bellTone(ctx, ctx.currentTime + i * 0.6, 1046.5, 0.72);
+      }
+    },
+  },
+
+  /** 📯 號角：三角波模擬銅管，Do-Mi-Sol-Do arpeggio */
+  bugle: {
+    name: '📯 號角',
+    fn(ctx, phase) {
+      // C4 → E4 → G4 → C5（第2段多一次 C5 強調）
+      const seq = phase === 1
+        ? [[523, 0.14], [659, 0.14], [784, 0.14], [1047, 0.38]]
+        : [[523, 0.12], [659, 0.12], [784, 0.12], [1047, 0.22],
+           [1047, 0.12], [784, 0.12], [1047, 0.42]];
+      let t = ctx.currentTime;
+      seq.forEach(([f, d]) => {
+        oscBeep(ctx, t, d, f, 'triangle', 0.7);
+        t += d + 0.025;
+      });
+    },
+  },
+
+  /** 🌊 溫柔喚醒：低音量五聲音階漸升，適合淺眠者 */
+  gentle: {
+    name: '🌊 溫柔喚醒',
+    fn(ctx, phase) {
+      const notes = phase === 1
+        ? [523, 659, 784, 880]
+        : [523, 659, 784, 880, 1047, 1175];
+      notes.forEach((f, i) =>
+        oscBeep(ctx, ctx.currentTime + i * 0.52, 0.48, f, 'sine', 0.32));
+    },
+  },
+};
+
+/* ---- 基礎音效積木 ---- */
+
+/**
+ * 播放單一振盪器 beep（含淡出）
+ * @param {AudioContext} ctx
+ * @param {number} t    開始時間（ctx.currentTime 偏移秒數）
+ * @param {number} dur  持續秒數
+ * @param {number} freq 頻率 Hz
+ * @param {OscillatorType} type  sine / square / triangle / sawtooth
+ * @param {number} vol  音量 0~1
+ */
+function oscBeep(ctx, t, dur, freq, type = 'sine', vol = 0.6) {
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.start(t);
+  osc.stop(t + dur + 0.06);
+}
+
+/**
+ * 鈴聲音效：快速起音 + 緩慢衰減，模擬鐘聲
+ */
+function bellTone(ctx, t, freq, vol = 0.7) {
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  // 快速起音（Attack 0.01s）→ 長尾衰減（Decay ~1s）
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(vol, t + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
+  osc.start(t);
+  osc.stop(t + 1.05);
+}
+
+/* ---- 音效路由：判斷耳機模式 + 呼叫選取音效 ---- */
+
+/**
+ * 主播放入口
+ * @param {1|2} phase 第幾段警報
+ * @param {boolean} [isPreview=false] 試聽模式（跳過耳機檢查）
+ */
+function playAlertSound(phase, isPreview = false) {
+  // 耳機模式：未插耳機則靜音（試聽時跳過此限制）
+  if (!isPreview && State.headphoneMode && !State.headphonesConnected) {
+    showToast('🎧 未偵測到耳機，已略過音效');
+    return;
+  }
+
   try {
     if (!State.audioCtx)
       State.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const ctx = State.audioCtx;
-    const beep = (t, dur, freq, vol = 0.6) => {
-      const osc = ctx.createOscillator(), gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'sine'; osc.frequency.value = freq;
-      gain.gain.setValueAtTime(vol, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-      osc.start(t); osc.stop(t + dur + 0.05);
-    };
-    const now = ctx.currentTime;
-    if (phase === 1) {
-      beep(now,       0.25, 880);
-      beep(now + 0.35, 0.25, 1100);
-      beep(now + 0.70, 0.40, 1320, 0.8);
-    } else {
-      for (let i = 0; i < 5; i++) beep(now + i * 0.45, 0.35, 1500, 0.9);
+
+    // iOS Safari 需要在使用者互動後 resume
+    if (State.audioCtx.state === 'suspended')
+      State.audioCtx.resume();
+
+    const soundDef = SOUNDS[State.selectedSound] ?? SOUNDS.melody;
+    soundDef.fn(State.audioCtx, phase);
+  } catch (e) {
+    console.warn('音效播放失敗：', e);
+  }
+}
+
+/* ---- 音效選擇 ---- */
+function selectSound(key) {
+  if (!SOUNDS[key]) return;
+  State.selectedSound = key;
+  saveSettings();
+
+  // 更新按鈕樣式
+  document.querySelectorAll('.sound-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.sound === key);
+  });
+
+  showToast(`已選擇：${SOUNDS[key].name}`);
+}
+
+/** 試聽按鈕 */
+function previewSound() {
+  const btn = document.getElementById('previewBtn');
+  btn.disabled = true;
+  btn.textContent = '🔊 播放中…';
+
+  playAlertSound(1, true); // isPreview = true，不受耳機限制
+
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = '▶️ 試聽選取音效';
+  }, 2500);
+}
+
+/* ---- 耳機偵測 ---- */
+
+/**
+ * 透過 MediaDevices API 偵測是否有耳機連接
+ * 原理：audiooutput 裝置數 ≥ 2 時，推測有額外輸出裝置（耳機/藍牙）
+ * 限制：無法百分之百確定是耳機（也可能是 HDMI / 藍牙喇叭）
+ * @returns {Promise<boolean|null>} true=可能有耳機, false=只有喇叭, null=無法判斷
+ */
+async function detectHeadphones() {
+  if (!navigator.mediaDevices?.enumerateDevices) return null;
+  try {
+    const devices  = await navigator.mediaDevices.enumerateDevices();
+    const outputs  = devices.filter(d => d.kind === 'audiooutput');
+    // 有些裝置的 label 含 "headphone"/"earphone" 可直接判斷
+    const hasLabel = outputs.some(d =>
+      /headphone|earphone|headset|耳機|ear/i.test(d.label));
+    if (hasLabel) return true;
+    // 沒有 label 時（未授權），用數量推估
+    return outputs.length >= 2;
+  } catch {
+    return null;
+  }
+}
+
+/** 更新耳機狀態 UI */
+async function refreshHeadphoneStatus() {
+  const statusDiv  = document.getElementById('headphoneStatus');
+  const iconEl     = document.getElementById('headphoneStatusIcon');
+  const textEl     = document.getElementById('headphoneStatusText');
+
+  if (!State.headphoneMode) {
+    statusDiv.style.display = 'none';
+    return;
+  }
+
+  statusDiv.style.display = 'flex';
+  textEl.textContent = '偵測中…';
+
+  const connected = await detectHeadphones();
+  State.headphonesConnected = connected ?? false;
+
+  if (connected === null) {
+    iconEl.textContent = '❓';
+    textEl.textContent = '無法偵測耳機（試聽確認音效是否正常）';
+    statusDiv.dataset.state = 'unknown';
+  } else if (connected) {
+    iconEl.textContent = '🎧';
+    textEl.textContent = '已偵測到耳機裝置，警報將透過耳機播放';
+    statusDiv.dataset.state = 'ok';
+  } else {
+    iconEl.textContent = '⚠️';
+    textEl.textContent = '未偵測到耳機，請插入耳機後再啟動';
+    statusDiv.dataset.state = 'warn';
+  }
+}
+
+/** 耳機模式 Toggle 事件 */
+function onHeadphoneModeToggle() {
+  State.headphoneMode = document.getElementById('chkHeadphone').checked;
+  saveSettings();
+  refreshHeadphoneStatus();
+}
+
+/** 監聽耳機插拔事件（devicechange） */
+if (navigator.mediaDevices) {
+  navigator.mediaDevices.addEventListener('devicechange', async () => {
+    if (!State.headphoneMode) return;
+    const prev = State.headphonesConnected;
+    const now  = await detectHeadphones();
+    State.headphonesConnected = now ?? false;
+
+    if (now !== null && now !== prev) {
+      showToast(now ? '🎧 耳機已連接' : '⚠️ 耳機已拔除');
     }
-  } catch (e) { console.warn('音效失敗：', e); }
+    refreshHeadphoneStatus();
+  });
 }
 
 /* ============================================================
@@ -614,8 +840,10 @@ const STORAGE_KEY = 'bus-alarm-v2';
 
 function saveSettings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    destination: State.destination,
-    radius:      State.radius,
+    destination:      State.destination,
+    radius:           State.radius,
+    selectedSound:    State.selectedSound,
+    headphoneMode:    State.headphoneMode,
     chkVibrate:       document.getElementById('chkVibrate')?.checked,
     chkSound:         document.getElementById('chkSound')?.checked,
     chkNotification:  document.getElementById('chkNotification')?.checked,
@@ -627,12 +855,32 @@ function loadSettings() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const d = JSON.parse(raw);
-    if (d.destination) State.destination = d.destination;
-    if (d.radius)      State.radius      = d.radius;
+
+    if (d.destination)   State.destination   = d.destination;
+    if (d.radius)        State.radius        = d.radius;
+    if (d.selectedSound) State.selectedSound = d.selectedSound;
+    if (d.headphoneMode) State.headphoneMode = d.headphoneMode;
+
     requestAnimationFrame(() => {
-      if (d.chkVibrate      !== undefined) document.getElementById('chkVibrate').checked      = d.chkVibrate;
-      if (d.chkSound        !== undefined) document.getElementById('chkSound').checked        = d.chkSound;
-      if (d.chkNotification !== undefined) document.getElementById('chkNotification').checked = d.chkNotification;
+      // 一般 Toggles
+      if (d.chkVibrate      !== undefined)
+        document.getElementById('chkVibrate').checked      = d.chkVibrate;
+      if (d.chkSound        !== undefined)
+        document.getElementById('chkSound').checked        = d.chkSound;
+      if (d.chkNotification !== undefined)
+        document.getElementById('chkNotification').checked = d.chkNotification;
+
+      // 耳機模式 Toggle
+      if (d.headphoneMode !== undefined)
+        document.getElementById('chkHeadphone').checked = d.headphoneMode;
+
+      // 音效按鈕 active 狀態
+      document.querySelectorAll('.sound-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sound === State.selectedSound);
+      });
+
+      // 初始化耳機狀態顯示
+      if (State.headphoneMode) refreshHeadphoneStatus();
     });
   } catch (e) { console.warn('讀取設定失敗：', e); }
 }

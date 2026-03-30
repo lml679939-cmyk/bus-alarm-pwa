@@ -140,6 +140,59 @@
       </div>
     </section>
 
+    <!-- ===== 警報音效選擇 ===== -->
+    <section class="section" id="soundSection">
+      <h2 class="section-title">🎵 警報音效</h2>
+
+      <!-- 五種音效選項 -->
+      <div class="sound-grid">
+        <button class="sound-btn active" data-sound="melody" onclick="selectSound('melody')">
+          <span class="sound-emoji">🎵</span>
+          <span class="sound-name">上升音階</span>
+        </button>
+        <button class="sound-btn" data-sound="alarm" onclick="selectSound('alarm')">
+          <span class="sound-emoji">🚨</span>
+          <span class="sound-name">急促警報</span>
+        </button>
+        <button class="sound-btn" data-sound="bell" onclick="selectSound('bell')">
+          <span class="sound-emoji">🔔</span>
+          <span class="sound-name">鈴聲</span>
+        </button>
+        <button class="sound-btn" data-sound="bugle" onclick="selectSound('bugle')">
+          <span class="sound-emoji">📯</span>
+          <span class="sound-name">號角</span>
+        </button>
+        <button class="sound-btn" data-sound="gentle" onclick="selectSound('gentle')">
+          <span class="sound-emoji">🌊</span>
+          <span class="sound-name">溫柔喚醒</span>
+        </button>
+      </div>
+
+      <!-- 試聽按鈕 -->
+      <button class="btn btn-outline btn-block" id="previewBtn" onclick="previewSound()">
+        ▶️ 試聽選取音效
+      </button>
+
+      <!-- 耳機模式 -->
+      <div class="headphone-block">
+        <div class="headphone-row">
+          <div class="headphone-info">
+            <span class="headphone-title">🎧 耳機模式</span>
+            <span class="headphone-desc">開啟後未偵測到耳機將不發聲，避免打擾鄰座</span>
+          </div>
+          <div class="toggle-wrapper">
+            <input type="checkbox" id="chkHeadphone" onchange="onHeadphoneModeToggle()">
+            <span class="toggle-track"></span>
+          </div>
+        </div>
+        <!-- 即時偵測狀態 -->
+        <div class="headphone-status" id="headphoneStatus" style="display:none">
+          <span id="headphoneStatusIcon">🎧</span>
+          <span id="headphoneStatusText">偵測中…</span>
+        </div>
+      </div>
+    </section>
+
     <!-- ===== 主控制按鈕 ===== -->
     <section class="section control-section">
       <button class="btn btn-primary btn-huge" id="btnStart" onclick="startMonitoring()">

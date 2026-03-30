@@ -754,6 +754,200 @@ body {
 }
 
 /* ============================================================
+   目前位置列
+   ============================================================ */
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.info-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: 'Menlo', 'Courier New', monospace;
+  flex: 1;
+  word-break: break-all;
+}
+
+.accuracy-pill {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-height: 16px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   搜尋框
+   ============================================================ */
+.search-box {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 12px 14px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  font-size: 15px;
+  background: var(--bg-section);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.search-input:focus {
+  border-color: var(--border-focus);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-btn {
+  padding: 12px 16px;
+  font-size: 18px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   搜尋結果列表
+   ============================================================ */
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+  border-radius: 12px;
+  /* 有結果才顯示邊框 */
+}
+
+.search-results:not(:empty) {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  margin-bottom: 8px;
+}
+
+.result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background var(--transition);
+}
+
+.result-item:last-child { border-bottom: none; }
+
+.result-item:hover,
+.result-item:active {
+  background: var(--bg-section);
+}
+
+.result-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.result-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-name {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.search-empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ============================================================
+   已選目的地資訊盒
+   ============================================================ */
+.dest-info-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-section));
+  border: 2px solid var(--color-primary);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .dest-info-box { border-color: #90caf9; }
+}
+
+.dest-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.dest-coords {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+  margin-top: 3px;
+}
+
+.clear-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+
+.clear-btn:hover { color: var(--color-danger); border-color: var(--color-danger); }
+
+/* 全寬按鈕 */
+.btn-block {
+  width: 100%;
+  font-size: 14px;
+  padding: 11px;
+}
+
+/* ============================================================
    RWD：較大螢幕（平板+）
    ============================================================ */
 @media (min-width: 600px) {

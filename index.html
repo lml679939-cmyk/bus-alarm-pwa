@@ -2,25 +2,17 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <!-- 行動裝置 viewport，禁止縮放以防止操作誤觸 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#1565c0">
-
-  <!-- iOS PWA 相關 meta -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="公車到站提醒">
-
   <title>公車到站提醒</title>
-
-  <!-- PWA manifest -->
   <link rel="manifest" href="manifest.json">
-  <!-- iOS 主畫面圖示（需要 PNG） -->
   <link rel="apple-touch-icon" href="icons/icon-192.png">
 
-  <!-- Leaflet 地圖 CSS（改用 cdnjs，移除 integrity 避免 hash 驗證失敗） -->
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -31,20 +23,19 @@
       <span class="app-icon">🚌</span>
       <h1 class="app-title">公車到站提醒</h1>
     </div>
-    <!-- 狀態徽章：待機中 / 監聽中 / 已接近 / 已觸發 -->
     <div class="status-badge" id="statusBadge" data-status="idle">待機中</div>
   </header>
 
-  <!-- ===== 地圖區域（Leaflet 渲染目標） ===== -->
-  <div id="map" role="application" aria-label="位置地圖"></div>
-
-  <!-- ===== 地圖選點提示條 ===== -->
-  <div class="map-hint-bar" id="mapHintBar" style="display:none">
-    <span>👆 點擊地圖上任意位置以設定家門口</span>
-    <button class="hint-cancel-btn" onclick="cancelMapSelect()">取消</button>
+  <!-- ===== 地圖區域 ===== -->
+  <div id="map" role="application" aria-label="位置地圖">
+    <!-- 地圖選點提示條（貼在地圖底部） -->
+    <div class="map-hint-bar" id="mapHintBar" style="display:none">
+      <span>👆 點擊地圖設定目的地</span>
+      <button class="hint-cancel-btn" onclick="cancelMapSelect()">取消</button>
+    </div>
   </div>
 
-  <!-- ===== 主要面板（可捲動） ===== -->
+  <!-- ===== 主面板（可捲動） ===== -->
   <main class="panel" id="mainPanel">
 
     <!-- 距離顯示卡片 -->
@@ -53,63 +44,77 @@
         <span class="distance-value" id="distanceValue">--</span>
         <span class="distance-unit">公尺</span>
       </div>
-      <div class="distance-label" id="distanceLabel">距家門口</div>
+      <div class="distance-label" id="distanceLabel">距目的地</div>
       <div class="accuracy-label" id="accuracyLabel"></div>
     </div>
 
-    <!-- ===== 家門口位置設定 ===== -->
+    <!-- ===== 目前位置 ===== -->
     <section class="section">
-      <h2 class="section-title">📍 家門口位置</h2>
-
-      <div class="home-info-box" id="homeInfoBox">
-        <span class="home-coords" id="homeCoords">尚未設定家門口位置</span>
+      <h2 class="section-title">📍 目前位置</h2>
+      <div class="info-row" id="currentLocRow">
+        <span class="info-text" id="currentLocText">取得中…</span>
+        <button class="btn btn-sm btn-outline" onclick="relocate()">🔄 重新定位</button>
       </div>
-
-      <div class="btn-row">
-        <button class="btn btn-outline" id="btnSetHomeGPS" onclick="setHomeFromGPS()">
-          📡 用目前位置設定
-        </button>
-        <button class="btn btn-outline" id="btnSetHomeMap" onclick="toggleMapSelect()">
-          🗺️ 在地圖上選取
-        </button>
-      </div>
+      <div class="accuracy-pill" id="accuracyPill"></div>
     </section>
 
-    <!-- ===== 提醒半徑設定 ===== -->
+    <!-- ===== 目的地搜尋 ===== -->
+    <section class="section">
+      <h2 class="section-title">🎯 目的地設定</h2>
+
+      <!-- 搜尋框 -->
+      <div class="search-box">
+        <input
+          type="text"
+          id="searchInput"
+          class="search-input"
+          placeholder="輸入地址或公車站名稱…"
+          autocomplete="off"
+          onkeydown="if(event.key==='Enter') searchPlace()"
+          oninput="onSearchInput(this.value)"
+        >
+        <button class="btn btn-primary search-btn" id="searchBtn" onclick="searchPlace()">
+          🔍
+        </button>
+      </div>
+
+      <!-- 搜尋結果列表 -->
+      <div class="search-results" id="searchResults"></div>
+
+      <!-- 已選目的地顯示 -->
+      <div class="dest-info-box" id="destInfoBox" style="display:none">
+        <div class="dest-name" id="destName">未設定</div>
+        <div class="dest-coords" id="destCoords"></div>
+        <button class="clear-btn" onclick="clearDestination()">✕ 清除</button>
+      </div>
+
+      <!-- 在地圖上選取 -->
+      <button class="btn btn-outline btn-block" id="btnMapSelect" onclick="toggleMapSelect()" style="margin-top:10px">
+        🗺️ 或在地圖上直接點選目的地
+      </button>
+    </section>
+
+    <!-- ===== 提醒半徑 ===== -->
     <section class="section">
       <h2 class="section-title">🎯 提醒半徑</h2>
-
       <div class="radius-row">
-        <input
-          type="range"
-          id="radiusSlider"
-          min="200" max="800" step="50"
-          value="500"
-          oninput="onRadiusChange(this.value)"
-          aria-label="提醒半徑"
-        >
+        <input type="range" id="radiusSlider" min="200" max="800" step="50" value="500"
+               oninput="onRadiusChange(this.value)" aria-label="提醒半徑">
         <div class="radius-display">
           <span id="radiusValue">500</span>&nbsp;公尺
         </div>
       </div>
-
-      <!-- 快速預設按鈕 -->
       <div class="preset-row">
         <button class="preset-btn" data-r="200" onclick="setRadius(200)">近 200m</button>
         <button class="preset-btn active" data-r="500" onclick="setRadius(500)">標準 500m</button>
         <button class="preset-btn" data-r="800" onclick="setRadius(800)">遠 800m</button>
       </div>
-
-      <!-- 加強警報半徑說明 -->
-      <p class="hint-text">
-        ⚡ 距離 ≤ 200m 時將觸發加強版震動（不論本設定）
-      </p>
+      <p class="hint-text">⚡ 距離 ≤ 200m 時將觸發加強版震動</p>
     </section>
 
     <!-- ===== 提醒方式 ===== -->
     <section class="section">
       <h2 class="section-title">🔔 提醒方式</h2>
-
       <div class="toggle-list">
         <label class="toggle-item">
           <span class="toggle-label">📳 震動提醒</span>
@@ -118,7 +123,6 @@
             <span class="toggle-track"></span>
           </div>
         </label>
-
         <label class="toggle-item">
           <span class="toggle-label">🔊 聲音提醒</span>
           <div class="toggle-wrapper">
@@ -126,7 +130,6 @@
             <span class="toggle-track"></span>
           </div>
         </label>
-
         <label class="toggle-item">
           <span class="toggle-label">🔔 系統通知</span>
           <div class="toggle-wrapper">
@@ -140,26 +143,25 @@
     <!-- ===== 主控制按鈕 ===== -->
     <section class="section control-section">
       <button class="btn btn-primary btn-huge" id="btnStart" onclick="startMonitoring()">
-        🚀 啟動回家模式
+        🚀 啟動到站提醒
       </button>
       <button class="btn btn-danger btn-huge" id="btnStop" onclick="stopMonitoring()" style="display:none">
         ⏹ 停止監聽
       </button>
     </section>
 
-    <!-- ===== Wake Lock 提醒（監聽中才顯示） ===== -->
+    <!-- Wake Lock 提醒 -->
     <div class="wake-lock-warning" id="wakeLockWarning" style="display:none">
-      ⚠️ <strong>重要提醒：</strong>搭車時請保持畫面開啟，否則 GPS 監聽可能因螢幕關閉而中斷。<br>
-      建議調低螢幕亮度以節省電量。
+      ⚠️ <strong>建議保持畫面開啟！</strong>螢幕關閉後 GPS 可能中斷。請調低亮度省電即可。
     </div>
 
-    <!-- ===== 背景執行說明（永遠顯示） ===== -->
+    <!-- 背景限制說明 -->
     <details class="info-details">
       <summary>📱 關於背景執行限制</summary>
       <div class="info-content">
-        <p><strong>Android Chrome：</strong>畫面關閉後 GPS 會在數分鐘內暫停，建議保持畫面開啟。</p>
-        <p><strong>iOS Safari：</strong>App 進入背景後 GPS 立即停止，必須保持 Safari 在前景。</p>
-        <p><strong>建議做法：</strong>啟動後把手機放在口袋可見的角落，開啟本 App 並調低亮度，由 Wake Lock 盡量維持畫面常亮。</p>
+        <p><strong>Android Chrome：</strong>畫面關閉後 GPS 數分鐘內暫停，建議保持畫面開啟。</p>
+        <p><strong>iOS Safari：</strong>進入背景後 GPS 立即停止，必須保持 Safari 在前景。</p>
+        <p><strong>建議：</strong>啟動後調低螢幕亮度，讓 App 保持在前景即可。</p>
       </div>
     </details>
 
@@ -168,27 +170,25 @@
   <!-- ===== 到站警報 Overlay ===== -->
   <div class="alert-overlay" id="alertOverlay" role="alertdialog" aria-modal="true" style="display:none">
     <div class="alert-box">
-      <div class="alert-icon" id="alertIcon">🏠</div>
-      <h2 class="alert-title" id="alertTitle">快到家了！</h2>
-      <p class="alert-message" id="alertMessage">距離家門口還有 XXX 公尺，請準備下車！</p>
-
+      <div class="alert-icon" id="alertIcon">🎯</div>
+      <h2 class="alert-title" id="alertTitle">快到站了！</h2>
+      <p class="alert-message" id="alertMessage">距離目的地還有 XXX 公尺，請準備下車！</p>
       <div class="alert-btn-group">
         <button class="btn btn-success btn-large" onclick="dismissAlert()">
           ✅ 我已醒來，停止提醒
         </button>
-        <button class="btn btn-outline btn-large" onclick="continueMonitoring()" id="btnContinue">
+        <button class="btn btn-outline btn-large" id="btnContinue" onclick="continueMonitoring()">
           🔄 繼續監聽（加強模式）
         </button>
       </div>
     </div>
   </div>
 
-  <!-- ===== Toast 訊息 ===== -->
+  <!-- ===== Toast ===== -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <!-- Leaflet JS（改用 cdnjs） -->
+  <!-- Leaflet JS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-
   <!-- 主程式 -->
   <script src="app.js"></script>
 </body>

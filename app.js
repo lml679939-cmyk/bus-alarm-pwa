@@ -1,14 +1,11 @@
 /**
- * 公車到站 GPS 震動提醒 — 主程式 app.js
- * 技術：Vanilla JS + Leaflet.js + Web APIs
+ * 公車到站 GPS 提醒 — app.js（v2）
  *
- * 功能：
- *  - 地圖顯示（Leaflet + OpenStreetMap）
- *  - GPS 監聽（watchPosition + 錯誤處理）
- *  - 兩段式距離警報（第1段：設定半徑；第2段：200m 加強）
- *  - 震動 / 通知 / 音效
- *  - Wake Lock API（避免螢幕自動熄滅）
- *  - localStorage 持久化設定
+ * 新流程：
+ *  1. 頁面載入 → 自動 GPS 定位目前位置，顯示在地圖上
+ *  2. 使用者搜尋目的地（地址/公車站）或在地圖上點選
+ *  3. 啟動監聽 → watchPosition 持續追蹤，計算與目的地距離
+ *  4. 接近時震動 + 音效 + 通知（兩段式：設定半徑 → 200m 加強）
  */
 
 'use strict';
@@ -17,45 +14,39 @@
    全域狀態
    ============================================================ */
 const State = {
-  homeLocation:  null,    // { lat, lng } 家門口座標
-  currentLoc:    null,    // { lat, lng, accuracy } 目前位置
-  radius:        500,     // 第1段提醒半徑（公尺）
-  INNER_RADIUS:  200,     // 第2段加強半徑（固定）
-  isMonitoring:  false,   // 是否啟動監聽
-  alertPhase:    0,       // 0=未觸發 1=已第1段 2=已第2段
-  watchId:       null,    // geolocation.watchPosition ID
-  wakeLock:      null,    // Screen Wake Lock 物件
-  mapSelectMode: false,   // 地圖選點模式
-  audioCtx:      null,    // Web Audio Context（延遲初始化）
-  vibrateLoop:   null,    // setInterval for repeated vibration
+  destination:   null,   // { lat, lng, name } 目的地
+  currentLoc:    null,   // { lat, lng, accuracy } 目前 GPS 位置
+  radius:        500,    // 第1段提醒半徑（公尺）
+  INNER_RADIUS:  200,    // 第2段加強半徑（固定）
+  isMonitoring:  false,
+  alertPhase:    0,      // 0=未觸發 1=第1段 2=第2段
+  watchId:       null,
+  wakeLock:      null,
+  mapSelectMode: false,
+  audioCtx:      null,
+  vibrateLoop:   null,
+  searchDebounce: null,  // 搜尋防抖 timer
 };
 
 /* ---- 震動 Pattern ---- */
-const VIBRATE_PHASE1 = [800, 200, 800, 200, 500, 200, 500, 200, 300, 200, 300];
-const VIBRATE_PHASE2 = [1500, 150, 1500, 150, 1500, 150, 800, 150, 800, 150, 500, 150, 500];
+const VIBRATE_P1 = [800, 200, 800, 200, 500, 200, 500, 200, 300, 200, 300];
+const VIBRATE_P2 = [1500,150,1500,150,1500,150,800,150,800,150,500,150,500];
 
 /* ---- 地圖物件 ---- */
 let map           = null;
-let homeMarker    = null;
-let currentMarker = null;
-let radiusCircle  = null;
-let innerCircle   = null;  // 200m 加強圓圈
+let destMarker    = null;   // 目的地標記
+let currentMarker = null;   // 目前位置標記
+let radiusCircle  = null;   // 第1段半徑圓
+let innerCircle   = null;   // 第2段 200m 圓
 
-/* ---- 家 / 目前位置的自訂 Leaflet Icon ---- */
-const HOME_ICON = L.divIcon({
-  html: '<div style="font-size:28px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))">🏠</div>',
-  iconSize:   [36, 36],
-  iconAnchor: [18, 32],
-  popupAnchor:[0, -32],
-  className:  '',
+/* ---- 自訂 Icon ---- */
+const DEST_ICON = L.divIcon({
+  html: '<div style="font-size:30px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">🎯</div>',
+  iconSize: [36, 36], iconAnchor: [18, 30], popupAnchor: [0, -30], className: '',
 });
-
 const MY_ICON = L.divIcon({
-  html: '<div style="font-size:24px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))">📍</div>',
-  iconSize:   [30, 30],
-  iconAnchor: [15, 28],
-  popupAnchor:[0, -28],
-  className:  '',
+  html: '<div style="font-size:26px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">📍</div>',
+  iconSize: [30, 30], iconAnchor: [15, 26], popupAnchor: [0, -26], className: '',
 });
 
 /* ============================================================
@@ -64,80 +55,268 @@ const MY_ICON = L.divIcon({
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   initMap();
+  autoLocate();          // 頁面載入時立即取得目前位置
   updateAllUI();
   registerServiceWorker();
-  updateRadiusSliderGradient();
+  requestNotificationPermission();
 });
 
 /* ============================================================
    地圖初始化
    ============================================================ */
 function initMap() {
-  // 預設中心：台北車站
-  const defaultCenter = State.homeLocation
-    ? [State.homeLocation.lat, State.homeLocation.lng]
-    : [25.0478, 121.5170];
-
   map = L.map('map', {
-    center:          defaultCenter,
-    zoom:            15,
-    zoomControl:     true,
-    attributionControl: true,
+    center: [25.0478, 121.5170], // 台北車站（未取得 GPS 前的預設中心）
+    zoom: 14,
+    zoomControl: true,
   });
 
-  // OpenStreetMap 圖磚
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
   }).addTo(map);
 
-  // 若已有家的位置，繪製標記與圓圈
-  if (State.homeLocation) {
-    drawHomeMarker(State.homeLocation.lat, State.homeLocation.lng);
+  // 若已有儲存的目的地，重繪
+  if (State.destination) {
+    drawDestMarker(State.destination.lat, State.destination.lng, State.destination.name);
   }
 
-  // 地圖點擊事件（地圖選點模式）
+  // 地圖點擊事件（選點模式才生效）
   map.on('click', onMapClick);
 }
 
-/* 地圖點擊：選取家門口位置 */
 function onMapClick(e) {
   if (!State.mapSelectMode) return;
-  setHome(e.latlng.lat, e.latlng.lng, '地圖選點');
+  const { lat, lng } = e.latlng;
+  // 用 Nominatim 反查地址
+  reverseGeocode(lat, lng).then(name => {
+    setDestination(lat, lng, name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+  });
   cancelMapSelect();
 }
 
 /* ============================================================
-   繪製地圖圖層
+   自動取得目前位置（頁面載入時）
    ============================================================ */
-function drawHomeMarker(lat, lng) {
-  // 移除舊標記
-  if (homeMarker) map.removeLayer(homeMarker);
+function autoLocate() {
+  if (!navigator.geolocation) {
+    updateCurrentLocUI(null, '您的瀏覽器不支援 GPS');
+    return;
+  }
+  updateCurrentLocUI(null, '🔍 定位中…');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => onInitialPosition(pos),
+    (err) => {
+      handleGeoError(err, '自動定位');
+      updateCurrentLocUI(null, '❌ 無法取得位置，請確認位置權限');
+    },
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+  );
+}
+
+/** 初次取得位置 → 置中地圖，顯示標記 */
+function onInitialPosition(pos) {
+  const { latitude: lat, longitude: lng, accuracy: acc } = pos.coords;
+  State.currentLoc = { lat, lng, accuracy: acc };
+  drawCurrentMarker(lat, lng);
+  map.setView([lat, lng], 15, { animate: true });
+  updateCurrentLocUI({ lat, lng }, null, acc);
+}
+
+/** 手動重新定位按鈕 */
+function relocate() {
+  updateCurrentLocUI(null, '🔍 重新定位中…');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => onInitialPosition(pos),
+    (err) => handleGeoError(err, '重新定位'),
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+  );
+}
+
+/* ============================================================
+   目的地搜尋（Nominatim OpenStreetMap 免費 API）
+   ============================================================ */
+
+/** 搜尋框 input 事件：防抖 600ms */
+function onSearchInput(val) {
+  clearTimeout(State.searchDebounce);
+  if (val.trim().length < 2) {
+    clearSearchResults();
+    return;
+  }
+  State.searchDebounce = setTimeout(() => searchPlace(), 600);
+}
+
+/** 執行搜尋 */
+async function searchPlace() {
+  const input = document.getElementById('searchInput');
+  const query = input.value.trim();
+  if (!query) { showToast('請輸入地址或公車站名稱'); return; }
+
+  const btn = document.getElementById('searchBtn');
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  try {
+    // Nominatim geocoding API（免費，不需要 API key）
+    // viewbox 加上台灣範圍讓結果優先在台灣
+    const url = new URL('https://nominatim.openstreetmap.org/search');
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('q', query);
+    url.searchParams.set('limit', '6');
+    url.searchParams.set('accept-language', 'zh-TW,zh,en');
+    // 若目前有 GPS 位置，用它作為搜尋中心（提升本地結果）
+    if (State.currentLoc) {
+      url.searchParams.set('lat', State.currentLoc.lat);
+      url.searchParams.set('lon', State.currentLoc.lng);
+    }
+
+    const res = await fetch(url.toString(), {
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const results = await res.json();
+    renderSearchResults(results);
+  } catch (err) {
+    showToast('❌ 搜尋失敗，請確認網路連線');
+    console.error('搜尋錯誤：', err);
+  } finally {
+    btn.textContent = '🔍';
+    btn.disabled = false;
+  }
+}
+
+/** 渲染搜尋結果列表 */
+function renderSearchResults(results) {
+  const container = document.getElementById('searchResults');
+  container.innerHTML = '';
+
+  if (!results || results.length === 0) {
+    container.innerHTML = '<div class="search-empty">找不到結果，請嘗試其他關鍵字</div>';
+    return;
+  }
+
+  results.forEach(item => {
+    const lat  = parseFloat(item.lat);
+    const lng  = parseFloat(item.lon);
+    // 顯示名稱：優先用 display_name，截短至 50 字
+    const name = item.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    const shortName = name.length > 50 ? name.substring(0, 50) + '…' : name;
+
+    // 判斷類型 icon
+    const typeIcon = getTypeIcon(item.type, item.class);
+
+    const btn = document.createElement('button');
+    btn.className = 'result-item';
+    btn.innerHTML = `
+      <span class="result-icon">${typeIcon}</span>
+      <div class="result-text">
+        <div class="result-name">${shortName}</div>
+        <div class="result-meta">${item.type || ''} · ${item.class || ''}</div>
+      </div>
+    `;
+    btn.onclick = () => {
+      setDestination(lat, lng, name);
+      clearSearchResults();
+      document.getElementById('searchInput').value = '';
+    };
+    container.appendChild(btn);
+  });
+}
+
+/** 根據 Nominatim 類型回傳對應 emoji */
+function getTypeIcon(type, cls) {
+  if (cls === 'highway' || type === 'bus_stop') return '🚌';
+  if (cls === 'railway' || type === 'station')  return '🚉';
+  if (cls === 'amenity'  || type === 'school')  return '🏫';
+  if (cls === 'shop')                           return '🏪';
+  if (type === 'hospital')                      return '🏥';
+  if (cls === 'building')                       return '🏢';
+  return '📌';
+}
+
+function clearSearchResults() {
+  document.getElementById('searchResults').innerHTML = '';
+}
+
+/* ============================================================
+   Nominatim 反向地理編碼（地圖點選 → 取得地址名稱）
+   ============================================================ */
+async function reverseGeocode(lat, lng) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh-TW,zh,en`;
+    const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const data = await res.json();
+    return data.display_name || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/* ============================================================
+   設定目的地
+   ============================================================ */
+function setDestination(lat, lng, name) {
+  State.destination = { lat, lng, name };
+  saveSettings();
+  drawDestMarker(lat, lng, name);
+  map.setView([lat, lng], 15, { animate: true });
+  updateDestUI();
+  showToast(`✅ 目的地已設定：${name.substring(0, 30)}…`);
+}
+
+function clearDestination() {
+  State.destination = null;
+  saveSettings();
+  if (destMarker)   { map.removeLayer(destMarker);   destMarker   = null; }
+  if (radiusCircle) { map.removeLayer(radiusCircle); radiusCircle = null; }
+  if (innerCircle)  { map.removeLayer(innerCircle);  innerCircle  = null; }
+  updateDestUI();
+  showToast('🗑️ 目的地已清除');
+}
+
+/* ============================================================
+   地圖選點模式
+   ============================================================ */
+function toggleMapSelect() {
+  if (State.mapSelectMode) { cancelMapSelect(); return; }
+  State.mapSelectMode = true;
+  document.getElementById('mapHintBar').style.display = 'flex';
+  document.getElementById('map').style.cursor = 'crosshair';
+  document.getElementById('btnMapSelect').textContent = '✖ 取消地圖選點';
+  showToast('請點擊地圖上的目的地位置');
+}
+
+function cancelMapSelect() {
+  State.mapSelectMode = false;
+  document.getElementById('mapHintBar').style.display = 'none';
+  document.getElementById('map').style.cursor = '';
+  document.getElementById('btnMapSelect').textContent = '🗺️ 或在地圖上直接點選目的地';
+}
+
+/* ============================================================
+   地圖繪製
+   ============================================================ */
+function drawDestMarker(lat, lng, name) {
+  if (destMarker)   map.removeLayer(destMarker);
   if (radiusCircle) map.removeLayer(radiusCircle);
   if (innerCircle)  map.removeLayer(innerCircle);
 
-  homeMarker = L.marker([lat, lng], { icon: HOME_ICON })
+  destMarker = L.marker([lat, lng], { icon: DEST_ICON })
     .addTo(map)
-    .bindPopup('🏠 家門口');
+    .bindPopup(`🎯 ${name || '目的地'}`);
 
-  // 第1段提醒半徑圓圈（藍色）
+  // 第1段半徑圓（藍色虛線）
   radiusCircle = L.circle([lat, lng], {
-    radius:      State.radius,
-    color:       '#1565c0',
-    fillColor:   '#1565c0',
-    fillOpacity: 0.08,
-    weight:      2,
-    dashArray:   '6,4',
+    radius: State.radius, color: '#1565c0', fillColor: '#1565c0',
+    fillOpacity: 0.08, weight: 2, dashArray: '6,4',
   }).addTo(map);
 
-  // 第2段加強半徑圓圈（橘色）
+  // 第2段 200m 加強圓（橘色虛線）
   innerCircle = L.circle([lat, lng], {
-    radius:      State.INNER_RADIUS,
-    color:       '#e65100',
-    fillColor:   '#e65100',
-    fillOpacity: 0.10,
-    weight:      2,
-    dashArray:   '4,3',
+    radius: State.INNER_RADIUS, color: '#e65100', fillColor: '#e65100',
+    fillOpacity: 0.10, weight: 2, dashArray: '4,3',
   }).addTo(map);
 }
 
@@ -152,146 +331,34 @@ function drawCurrentMarker(lat, lng) {
 }
 
 function updateRadiusCircle() {
-  if (!radiusCircle || !State.homeLocation) return;
-  radiusCircle.setRadius(State.radius);
+  if (radiusCircle) radiusCircle.setRadius(State.radius);
 }
 
 /* ============================================================
-   地圖選點模式
-   ============================================================ */
-function toggleMapSelect() {
-  if (State.mapSelectMode) {
-    cancelMapSelect();
-  } else {
-    State.mapSelectMode = true;
-    document.getElementById('mapHintBar').style.display = 'flex';
-    document.getElementById('map').style.cursor = 'crosshair';
-    document.getElementById('btnSetHomeMap').textContent = '✖ 取消選點';
-    showToast('請點擊地圖選擇家門口位置');
-  }
-}
-
-function cancelMapSelect() {
-  State.mapSelectMode = false;
-  document.getElementById('mapHintBar').style.display = 'none';
-  document.getElementById('map').style.cursor = '';
-  document.getElementById('btnSetHomeMap').textContent = '🗺️ 在地圖上選取';
-}
-
-/* ============================================================
-   設定家門口位置
-   ============================================================ */
-
-/** 用目前 GPS 位置設定家門口 */
-function setHomeFromGPS() {
-  const btn = document.getElementById('btnSetHomeGPS');
-  btn.disabled = true;
-  btn.textContent = '📡 取得中...';
-  showToast('正在取得目前位置…');
-
-  if (!navigator.geolocation) {
-    showToast('❌ 您的瀏覽器不支援 GPS');
-    btn.disabled = false;
-    btn.textContent = '📡 用目前位置設定';
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      setHome(pos.coords.latitude, pos.coords.longitude, '目前位置');
-      btn.disabled = false;
-      btn.textContent = '📡 用目前位置設定';
-    },
-    (err) => {
-      btn.disabled = false;
-      btn.textContent = '📡 用目前位置設定';
-      handleGeoError(err, '取得目前位置失敗');
-    },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-  );
-}
-
-/** 設定家門口（統一入口） */
-function setHome(lat, lng, method) {
-  State.homeLocation = { lat, lng };
-  saveSettings();
-  drawHomeMarker(lat, lng);
-  map.setView([lat, lng], 16, { animate: true });
-  updateHomeCoordsUI();
-  showToast(`✅ 家門口已設定（${method}）`);
-}
-
-/* ============================================================
-   半徑設定
-   ============================================================ */
-function onRadiusChange(val) {
-  State.radius = parseInt(val, 10);
-  document.getElementById('radiusValue').textContent = State.radius;
-  updateRadiusCircle();
-  updatePresetButtons();
-  updateRadiusSliderGradient();
-  saveSettings();
-}
-
-function setRadius(r) {
-  State.radius = r;
-  document.getElementById('radiusSlider').value = r;
-  document.getElementById('radiusValue').textContent = r;
-  updateRadiusCircle();
-  updatePresetButtons();
-  updateRadiusSliderGradient();
-  saveSettings();
-}
-
-function updatePresetButtons() {
-  document.querySelectorAll('.preset-btn').forEach(btn => {
-    const r = parseInt(btn.dataset.r, 10);
-    btn.classList.toggle('active', r === State.radius);
-  });
-}
-
-/** 更新滑桿的進度漸層（讓已選部分顯示顏色） */
-function updateRadiusSliderGradient() {
-  const slider = document.getElementById('radiusSlider');
-  const min = parseInt(slider.min, 10);
-  const max = parseInt(slider.max, 10);
-  const val = parseInt(slider.value, 10);
-  const pct = ((val - min) / (max - min)) * 100;
-  slider.style.background =
-    `linear-gradient(to right, #1565c0 ${pct}%, var(--border) ${pct}%)`;
-}
-
-/* ============================================================
-   GPS 監聽
+   GPS 監聽（啟動 / 停止）
    ============================================================ */
 function startMonitoring() {
-  if (!State.homeLocation) {
-    showToast('❌ 請先設定家門口位置！');
+  if (!State.destination) {
+    showToast('❌ 請先設定目的地！');
     return;
   }
-
   if (!navigator.geolocation) {
-    showToast('❌ 您的瀏覽器不支援 GPS');
+    showToast('❌ 瀏覽器不支援 GPS');
     return;
   }
 
   State.isMonitoring = true;
   State.alertPhase   = 0;
 
-  // 啟動 watchPosition（高精度，最多 30 秒 timeout）
   State.watchId = navigator.geolocation.watchPosition(
     onPositionUpdate,
     onPositionError,
-    {
-      enableHighAccuracy: true,
-      timeout:            30000,
-      maximumAge:         10000, // 允許最多 10 秒的快取位置
-    }
+    { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
   );
 
   requestWakeLock();
   updateAllUI();
-  showToast('🚀 已啟動回家模式，祝好眠！');
+  showToast('🚀 已啟動！接近目的地時會提醒你');
 }
 
 function stopMonitoring() {
@@ -299,232 +366,145 @@ function stopMonitoring() {
     navigator.geolocation.clearWatch(State.watchId);
     State.watchId = null;
   }
-
   State.isMonitoring = false;
   State.alertPhase   = 0;
-
   releaseWakeLock();
   stopVibrateLoop();
   hideAlertOverlay();
   updateAllUI();
+
+  // 重置距離卡片
+  document.getElementById('distanceValue').textContent = '--';
+  document.getElementById('distanceLabel').textContent = '距目的地';
+  document.getElementById('distanceCard').dataset.status = 'idle';
   showToast('⏹ 已停止監聽');
 }
 
 /** watchPosition 成功回呼 */
 function onPositionUpdate(pos) {
-  const lat = pos.coords.latitude;
-  const lng = pos.coords.longitude;
-  const acc = pos.coords.accuracy;
-
+  const { latitude: lat, longitude: lng, accuracy: acc } = pos.coords;
   State.currentLoc = { lat, lng, accuracy: acc };
 
-  // 更新地圖上的目前位置標記
   drawCurrentMarker(lat, lng);
+  updateCurrentLocUI({ lat, lng }, null, acc);
 
-  // 計算距離
-  const dist = haversineDistance(lat, lng,
-    State.homeLocation.lat, State.homeLocation.lng);
-
+  const dist = haversineDistance(lat, lng, State.destination.lat, State.destination.lng);
   updateDistanceUI(dist, acc);
   checkAlert(dist);
 }
 
-/** watchPosition 錯誤回呼 */
 function onPositionError(err) {
   handleGeoError(err, 'GPS 監聽');
 }
 
 /* ============================================================
-   距離計算（Haversine 公式）
+   Haversine 距離計算
    ============================================================ */
-/**
- * 計算兩點間距離（公尺）
- * @param {number} lat1 緯度1
- * @param {number} lon1 經度1
- * @param {number} lat2 緯度2
- * @param {number} lon2 經度2
- * @returns {number} 距離（公尺）
- */
 function haversineDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000; // 地球半徑（公尺）
-  const toRad = deg => deg * Math.PI / 180;
-
+  const R    = 6371000;
+  const toRad = d => d * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2))
-    * Math.sin(dLon / 2) ** 2;
-
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const a = Math.sin(dLat/2)**2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 /* ============================================================
-   警報觸發邏輯（兩段式）
+   兩段式警報
    ============================================================ */
-function checkAlert(distMeters) {
+function checkAlert(dist) {
   if (!State.isMonitoring) return;
-
-  // 第2段：200m 加強警報（前提：已觸發第1段）
-  if (State.alertPhase === 1 && distMeters <= State.INNER_RADIUS) {
-    triggerAlert(2, distMeters);
-    return;
+  if (State.alertPhase === 1 && dist <= State.INNER_RADIUS) {
+    triggerAlert(2, dist); return;
   }
-
-  // 第1段：設定半徑警報（前提：尚未觸發）
-  if (State.alertPhase === 0 && distMeters <= State.radius) {
-    triggerAlert(1, distMeters);
+  if (State.alertPhase === 0 && dist <= State.radius) {
+    triggerAlert(1, dist);
   }
 }
 
-/**
- * 觸發警報
- * @param {1|2} phase 第幾段
- * @param {number} dist 目前距離（公尺）
- */
 function triggerAlert(phase, dist) {
   State.alertPhase = phase;
-
   const distText = Math.round(dist);
   const isUrgent = phase === 2;
 
-  // 1. 震動
   if (document.getElementById('chkVibrate').checked && 'vibrate' in navigator) {
-    const pattern = isUrgent ? VIBRATE_PHASE2 : VIBRATE_PHASE1;
+    const pattern = isUrgent ? VIBRATE_P2 : VIBRATE_P1;
     navigator.vibrate(pattern);
-    // 持續重複震動（每 4 秒）
     startVibrateLoop(pattern);
   }
-
-  // 2. 聲音
-  if (document.getElementById('chkSound').checked) {
-    playAlertSound(phase);
-  }
-
-  // 3. 系統通知
-  if (document.getElementById('chkNotification').checked) {
-    sendNotification(phase, distText);
-  }
-
-  // 4. 顯示 Overlay
+  if (document.getElementById('chkSound').checked) playAlertSound(phase);
+  if (document.getElementById('chkNotification').checked) sendNotification(phase, distText);
   showAlertOverlay(phase, distText);
-
-  // 5. 更新 UI 狀態
   updateStatusBadge('triggered');
   updateDistanceCardStatus('triggered');
 }
 
-/* ---- 持續震動迴圈 ---- */
 function startVibrateLoop(pattern) {
   stopVibrateLoop();
-  const totalMs = pattern.reduce((a, b) => a + b, 0) + 1000;
+  const delay = pattern.reduce((a, b) => a + b, 0) + 1000;
   State.vibrateLoop = setInterval(() => {
     if ('vibrate' in navigator) navigator.vibrate(pattern);
-  }, totalMs);
+  }, delay);
 }
 
 function stopVibrateLoop() {
-  if (State.vibrateLoop) {
-    clearInterval(State.vibrateLoop);
-    State.vibrateLoop = null;
-  }
-  if ('vibrate' in navigator) navigator.vibrate(0); // 立即停止震動
+  if (State.vibrateLoop) { clearInterval(State.vibrateLoop); State.vibrateLoop = null; }
+  if ('vibrate' in navigator) navigator.vibrate(0);
 }
 
 /* ============================================================
    音效（Web Audio API）
    ============================================================ */
-/**
- * 播放警報音效
- * @param {1|2} phase 第幾段（phase 2 為加強版）
- */
 function playAlertSound(phase) {
   try {
-    // AudioContext 必須在使用者互動後初始化（或在第一次播放時）
-    if (!State.audioCtx) {
+    if (!State.audioCtx)
       State.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
     const ctx = State.audioCtx;
-
-    /**
-     * 播放單個 Beep
-     * @param {number} startTime ctx.currentTime 的偏移秒數
-     * @param {number} duration  持續秒數
-     * @param {number} freq      Hz
-     * @param {number} vol       0~1
-     */
-    const beep = (startTime, duration, freq, vol = 0.6) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(vol, startTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-      osc.start(startTime);
-      osc.stop(startTime + duration + 0.05);
+    const beep = (t, dur, freq, vol = 0.6) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(vol, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t); osc.stop(t + dur + 0.05);
     };
-
     const now = ctx.currentTime;
-
     if (phase === 1) {
-      // 三聲上升提示音
-      beep(now + 0.0, 0.25, 880);
+      beep(now,       0.25, 880);
       beep(now + 0.35, 0.25, 1100);
       beep(now + 0.70, 0.40, 1320, 0.8);
     } else {
-      // 緊急警報：快速 5 聲高頻
-      for (let i = 0; i < 5; i++) {
-        beep(now + i * 0.45, 0.35, 1500, 0.9);
-      }
+      for (let i = 0; i < 5; i++) beep(now + i * 0.45, 0.35, 1500, 0.9);
     }
-  } catch (e) {
-    console.warn('playAlertSound 失敗：', e);
-  }
+  } catch (e) { console.warn('音效失敗：', e); }
 }
 
 /* ============================================================
-   系統通知（Notification API）
+   系統通知
    ============================================================ */
-function sendNotification(phase, distMeters) {
+function sendNotification(phase, distM) {
   if (Notification.permission !== 'granted') return;
-
-  const isUrgent = phase === 2;
-  const title = isUrgent ? '🚨 快要到站了！趕快醒來！' : '🏠 快到家了！準備下車！';
-  const body  = `距離家門口僅剩約 ${distMeters} 公尺，請準備下車！`;
-
+  const urgent = phase === 2;
   try {
-    const notif = new Notification(title, {
-      body,
-      icon:    'icons/icon-192.png',
-      badge:   'icons/icon-192.png',
-      vibrate: isUrgent ? VIBRATE_PHASE2 : VIBRATE_PHASE1,
-      tag:     'bus-alarm',         // 同 tag 會覆蓋舊通知，避免洗版
-      renotify: true,
-      requireInteraction: true,     // 通知不會自動消失（Android）
-    });
-
-    // 點擊通知時切換回 App
-    notif.onclick = () => {
-      window.focus();
-      notif.close();
-    };
-  } catch (e) {
-    console.warn('Notification 發送失敗：', e);
-  }
+    const n = new Notification(
+      urgent ? '🚨 快到站！趕快醒來！' : '🎯 快到目的地了！',
+      {
+        body: `距離目的地僅剩約 ${distM} 公尺，請準備下車！`,
+        icon: 'icons/icon-192.png',
+        tag: 'bus-alarm', renotify: true, requireInteraction: true,
+      }
+    );
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch (e) { console.warn('通知失敗：', e); }
 }
 
-/** 請求通知權限 */
 async function requestNotificationPermission() {
   if (!('Notification' in window)) return;
   if (Notification.permission === 'default') {
-    // 延遲請求，避免頁面一載入就彈出
     setTimeout(async () => {
-      const perm = await Notification.requestPermission();
-      if (perm === 'granted') {
-        showToast('✅ 通知權限已開啟');
-      }
+      const p = await Notification.requestPermission();
+      if (p === 'granted') showToast('✅ 通知權限已開啟');
     }, 2000);
   }
 }
@@ -533,12 +513,8 @@ function onNotificationToggle() {
   const chk = document.getElementById('chkNotification');
   if (chk.checked && Notification.permission !== 'granted') {
     Notification.requestPermission().then(p => {
-      if (p !== 'granted') {
-        chk.checked = false;
-        showToast('❌ 通知權限被拒絕，請在瀏覽器設定中開啟');
-      } else {
-        showToast('✅ 通知已開啟');
-      }
+      if (p !== 'granted') { chk.checked = false; showToast('❌ 通知權限被拒絕'); }
+      else showToast('✅ 通知已開啟');
     });
   }
   saveSettings();
@@ -549,60 +525,43 @@ function onNotificationToggle() {
    ============================================================ */
 async function requestWakeLock() {
   if (!('wakeLock' in navigator)) {
-    // 不支援時顯示手動提示
-    document.getElementById('wakeLockWarning').style.display = 'block';
-    return;
+    document.getElementById('wakeLockWarning').style.display = 'block'; return;
   }
   try {
     State.wakeLock = await navigator.wakeLock.request('screen');
-    console.log('✅ Wake Lock 已啟用');
-
-    // 頁面重新可見時重新取得 Wake Lock（切 App 再切回來）
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    // Wake Lock 被釋放時更新提示
     State.wakeLock.addEventListener('release', () => {
-      console.log('Wake Lock 已釋放');
       document.getElementById('wakeLockWarning').style.display = 'block';
     });
-
+    document.addEventListener('visibilitychange', onVisibilityChange);
     document.getElementById('wakeLockWarning').style.display = 'none';
-  } catch (err) {
-    console.warn('Wake Lock 失敗：', err);
+  } catch (e) {
+    console.warn('Wake Lock 失敗：', e);
     document.getElementById('wakeLockWarning').style.display = 'block';
   }
 }
 
 function releaseWakeLock() {
-  if (State.wakeLock) {
-    State.wakeLock.release();
-    State.wakeLock = null;
-  }
+  if (State.wakeLock) { State.wakeLock.release(); State.wakeLock = null; }
   document.removeEventListener('visibilitychange', onVisibilityChange);
   document.getElementById('wakeLockWarning').style.display = 'none';
 }
 
 async function onVisibilityChange() {
   if (document.visibilityState === 'visible' && State.isMonitoring) {
-    // 回到前景後嘗試重新取得 Wake Lock
     await requestWakeLock();
   }
 }
 
 /* ============================================================
-   Alert Overlay UI
+   Alert Overlay
    ============================================================ */
-function showAlertOverlay(phase, distMeters) {
-  const isUrgent = phase === 2;
-  document.getElementById('alertIcon').textContent    = isUrgent ? '🚨' : '🏠';
-  document.getElementById('alertTitle').textContent   = isUrgent ? '快要到站！趕快醒來！' : '快到家了！';
+function showAlertOverlay(phase, distM) {
+  const urgent = phase === 2;
+  document.getElementById('alertIcon').textContent    = urgent ? '🚨' : '🎯';
+  document.getElementById('alertTitle').textContent   = urgent ? '快到站！趕快醒來！' : '快到目的地了！';
   document.getElementById('alertMessage').textContent =
-    `距離家門口僅剩約 ${distMeters} 公尺，請準備下車！`;
-
-  // 第2段警報不再顯示「繼續監聽」（已是最後一段）
-  const btnContinue = document.getElementById('btnContinue');
-  btnContinue.style.display = isUrgent ? 'none' : 'block';
-
+    `距離「${State.destination?.name?.substring(0,20) || '目的地'}」僅剩約 ${distM} 公尺！`;
+  document.getElementById('btnContinue').style.display = urgent ? 'none' : 'block';
   document.getElementById('alertOverlay').style.display = 'flex';
 }
 
@@ -610,20 +569,17 @@ function hideAlertOverlay() {
   document.getElementById('alertOverlay').style.display = 'none';
 }
 
-/** 使用者按「我已醒來，停止提醒」 */
 function dismissAlert() {
   stopVibrateLoop();
   hideAlertOverlay();
   stopMonitoring();
-  showToast('✅ 提醒已停止，平安到家！');
+  showToast('✅ 提醒已停止，平安抵達！');
 }
 
-/** 使用者按「繼續監聽」（等待 200m 加強） */
 function continueMonitoring() {
   stopVibrateLoop();
   hideAlertOverlay();
-  // alertPhase 已設為 1，下次進入 checkAlert 會等待 200m
-  showToast('🔄 繼續監聽中，200m 時加強提醒');
+  showToast('🔄 繼續監聽，200m 時加強提醒');
   updateStatusBadge('nearby');
   updateDistanceCardStatus('nearby');
 }
@@ -631,185 +587,181 @@ function continueMonitoring() {
 /* ============================================================
    錯誤處理
    ============================================================ */
-function handleGeoError(err, context) {
-  let msg = '';
-  switch (err.code) {
-    case err.PERMISSION_DENIED:
-      msg = '❌ GPS 權限被拒絕，請至瀏覽器設定開啟位置權限';
-      if (State.isMonitoring) stopMonitoring();
-      break;
-    case err.POSITION_UNAVAILABLE:
-      msg = '⚠️ GPS 訊號不穩定，請移至開放空間';
-      break;
-    case err.TIMEOUT:
-      msg = '⏱️ 取得位置逾時，自動重試中…';
-      break;
-    default:
-      msg = `❌ GPS 錯誤（${context}）：${err.message}`;
-  }
-  showToast(msg, 4000);
-  console.warn(`[${context}] GPS Error ${err.code}: ${err.message}`);
+function handleGeoError(err, ctx) {
+  const msgs = {
+    1: '❌ GPS 權限被拒絕，請到瀏覽器設定開啟位置權限',
+    2: '⚠️ GPS 訊號不穩定，請移至室外空曠處',
+    3: '⏱️ 取得位置逾時，請稍候重試',
+  };
+  showToast(msgs[err.code] || `❌ GPS 錯誤（${ctx}）`);
+  console.warn(`[${ctx}] GPS ${err.code}: ${err.message}`);
 }
 
 /* ============================================================
-   Service Worker 註冊
+   Service Worker
    ============================================================ */
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-
   navigator.serviceWorker.register('sw.js')
-    .then(reg => console.log('✅ Service Worker 已註冊：', reg.scope))
-    .catch(err => console.warn('Service Worker 註冊失敗：', err));
+    .then(r => console.log('✅ SW 已註冊：', r.scope))
+    .catch(e => console.warn('SW 註冊失敗：', e));
 }
 
 /* ============================================================
    localStorage 設定讀寫
    ============================================================ */
-const STORAGE_KEY = 'bus-alarm-settings';
+const STORAGE_KEY = 'bus-alarm-v2';
 
 function saveSettings() {
-  const data = {
-    homeLocation: State.homeLocation,
-    radius:       State.radius,
-    chkVibrate:   document.getElementById('chkVibrate').checked,
-    chkSound:     document.getElementById('chkSound').checked,
-    chkNotification: document.getElementById('chkNotification').checked,
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    destination: State.destination,
+    radius:      State.radius,
+    chkVibrate:       document.getElementById('chkVibrate')?.checked,
+    chkSound:         document.getElementById('chkSound')?.checked,
+    chkNotification:  document.getElementById('chkNotification')?.checked,
+  }));
 }
 
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
-    const data = JSON.parse(raw);
-
-    if (data.homeLocation) State.homeLocation = data.homeLocation;
-    if (data.radius)       State.radius = data.radius;
-
-    // 還原 checkbox 狀態（延遲等 DOM 就緒）
+    const d = JSON.parse(raw);
+    if (d.destination) State.destination = d.destination;
+    if (d.radius)      State.radius      = d.radius;
     requestAnimationFrame(() => {
-      if (data.chkVibrate   !== undefined)
-        document.getElementById('chkVibrate').checked       = data.chkVibrate;
-      if (data.chkSound     !== undefined)
-        document.getElementById('chkSound').checked         = data.chkSound;
-      if (data.chkNotification !== undefined)
-        document.getElementById('chkNotification').checked  = data.chkNotification;
+      if (d.chkVibrate      !== undefined) document.getElementById('chkVibrate').checked      = d.chkVibrate;
+      if (d.chkSound        !== undefined) document.getElementById('chkSound').checked        = d.chkSound;
+      if (d.chkNotification !== undefined) document.getElementById('chkNotification').checked = d.chkNotification;
     });
-  } catch (e) {
-    console.warn('讀取設定失敗：', e);
-  }
+  } catch (e) { console.warn('讀取設定失敗：', e); }
 }
 
 /* ============================================================
-   UI 更新函式
+   半徑控制
    ============================================================ */
+function onRadiusChange(val) {
+  State.radius = parseInt(val, 10);
+  document.getElementById('radiusValue').textContent = State.radius;
+  updateRadiusCircle();
+  updatePresetButtons();
+  updateSliderGradient();
+  saveSettings();
+}
 
-/** 一次更新所有 UI 元件 */
+function setRadius(r) {
+  State.radius = r;
+  document.getElementById('radiusSlider').value = r;
+  document.getElementById('radiusValue').textContent = r;
+  updateRadiusCircle();
+  updatePresetButtons();
+  updateSliderGradient();
+  saveSettings();
+}
+
+function updatePresetButtons() {
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.r, 10) === State.radius);
+  });
+}
+
+function updateSliderGradient() {
+  const s = document.getElementById('radiusSlider');
+  const pct = ((State.radius - 200) / 600) * 100;
+  s.style.background = `linear-gradient(to right,#1565c0 ${pct}%,var(--border) ${pct}%)`;
+}
+
+/* ============================================================
+   UI 更新函式群
+   ============================================================ */
 function updateAllUI() {
-  updateHomeCoordsUI();
+  updateDestUI();
   updateRadiusUI();
   updateMonitoringButtons();
   updateStatusBadge(State.isMonitoring ? 'monitoring' : 'idle');
 }
 
-/** 更新家門口座標顯示 */
-function updateHomeCoordsUI() {
-  const el = document.getElementById('homeCoords');
-  if (State.homeLocation) {
-    const { lat, lng } = State.homeLocation;
-    el.textContent = `緯度 ${lat.toFixed(6)}，經度 ${lng.toFixed(6)}`;
-  } else {
-    el.textContent = '尚未設定家門口位置';
+function updateDestUI() {
+  const box    = document.getElementById('destInfoBox');
+  const noInfo = !State.destination;
+  box.style.display = noInfo ? 'none' : 'flex';
+  if (!noInfo) {
+    const shortName = State.destination.name.length > 50
+      ? State.destination.name.substring(0, 50) + '…'
+      : State.destination.name;
+    document.getElementById('destName').textContent   = shortName;
+    document.getElementById('destCoords').textContent =
+      `${State.destination.lat.toFixed(5)}, ${State.destination.lng.toFixed(5)}`;
   }
 }
 
-/** 更新半徑滑桿與顯示 */
+function updateCurrentLocUI(coords, statusText, accuracy) {
+  const el = document.getElementById('currentLocText');
+  const pill = document.getElementById('accuracyPill');
+  if (statusText) {
+    el.textContent = statusText;
+    pill.textContent = '';
+    return;
+  }
+  if (coords) {
+    el.textContent = `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+    pill.textContent = accuracy ? `GPS 精度 ±${Math.round(accuracy)} 公尺` : '';
+  }
+}
+
 function updateRadiusUI() {
-  document.getElementById('radiusSlider').value   = State.radius;
+  document.getElementById('radiusSlider').value      = State.radius;
   document.getElementById('radiusValue').textContent = State.radius;
   updatePresetButtons();
-  updateRadiusSliderGradient();
+  updateSliderGradient();
 }
 
-/** 更新啟動 / 停止按鈕顯示 */
 function updateMonitoringButtons() {
-  const btnStart = document.getElementById('btnStart');
-  const btnStop  = document.getElementById('btnStop');
-  const mapEl    = document.getElementById('map');
-
-  if (State.isMonitoring) {
-    btnStart.style.display = 'none';
-    btnStop.style.display  = 'block';
-    mapEl.classList.add('monitoring');
-  } else {
-    btnStart.style.display = 'block';
-    btnStop.style.display  = 'none';
-    mapEl.classList.remove('monitoring');
-  }
+  const s = State.isMonitoring;
+  document.getElementById('btnStart').style.display = s ? 'none' : 'block';
+  document.getElementById('btnStop').style.display  = s ? 'block' : 'none';
+  document.getElementById('map').classList.toggle('monitoring', s);
 }
 
-/** 更新頂部狀態徽章 */
 function updateStatusBadge(status) {
-  const badge = document.getElementById('statusBadge');
-  const labels = {
-    idle:       '待機中',
-    monitoring: '監聽中 ●',
-    nearby:     '已接近 ⚡',
-    triggered:  '已觸發 🔔',
-  };
+  const badge  = document.getElementById('statusBadge');
+  const labels = { idle:'待機中', monitoring:'監聽中 ●', nearby:'已接近 ⚡', triggered:'已觸發 🔔' };
   badge.dataset.status = status;
   badge.textContent    = labels[status] || '待機中';
 }
 
-/** 更新距離數字顯示 */
-function updateDistanceUI(dist, accuracy) {
-  const valEl   = document.getElementById('distanceValue');
-  const labelEl = document.getElementById('distanceLabel');
-  const accEl   = document.getElementById('accuracyLabel');
+function updateDistanceUI(dist, acc) {
+  document.getElementById('distanceValue').textContent = Math.round(dist);
+  document.getElementById('accuracyLabel').textContent = acc ? `GPS 精度 ±${Math.round(acc)}m` : '';
 
-  const distRound = Math.round(dist);
-  valEl.textContent = distRound;
-
-  // 判斷接近狀態
+  const name = State.destination?.name?.substring(0, 15) || '目的地';
   if (dist <= State.INNER_RADIUS) {
-    labelEl.textContent = '⚡ 已非常接近！';
+    document.getElementById('distanceLabel').textContent = '⚡ 非常接近目的地！';
     updateDistanceCardStatus('triggered');
     updateStatusBadge('triggered');
   } else if (dist <= State.radius) {
-    labelEl.textContent = '⚠️ 即將到站！';
+    document.getElementById('distanceLabel').textContent = `⚠️ 即將到達${name}！`;
     updateDistanceCardStatus('nearby');
     updateStatusBadge('nearby');
   } else {
-    labelEl.textContent = `距家門口（半徑 ${State.radius}m）`;
+    document.getElementById('distanceLabel').textContent = `距「${name}」`;
     updateDistanceCardStatus('monitoring');
     updateStatusBadge('monitoring');
   }
-
-  accEl.textContent = accuracy ? `GPS 精度 ±${Math.round(accuracy)} 公尺` : '';
 }
 
-function updateDistanceCardStatus(status) {
-  document.getElementById('distanceCard').dataset.status = status;
+function updateDistanceCardStatus(s) {
+  document.getElementById('distanceCard').dataset.status = s;
 }
 
 /* ============================================================
    Toast 訊息
    ============================================================ */
 let toastTimer = null;
-
-/**
- * 顯示底部 Toast 訊息
- * @param {string} msg     訊息內容
- * @param {number} duration 顯示毫秒數（預設 2500）
- */
-function showToast(msg, duration = 2500) {
-  const toast = document.getElementById('toast');
-  toast.textContent = msg;
-  toast.classList.add('show');
-
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toast.classList.remove('show');
-  }, duration);
+function showToast(msg, duration = 2800) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
 }

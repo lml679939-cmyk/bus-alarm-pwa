@@ -173,6 +173,16 @@
         ▶️ 試聽選取音效
       </button>
 
+      <!-- 音量控制 -->
+      <div class="volume-row">
+        <span class="volume-icon">🔈</span>
+        <input type="range" id="volumeSlider" min="0" max="100" step="5" value="80"
+               oninput="onVolumeChange(this.value)" aria-label="音量">
+        <span class="volume-icon">🔊</span>
+        <span class="volume-value" id="volumeValue">80</span>
+        <span class="volume-pct">%</span>
+      </div>
+
       <!-- 耳機模式 -->
       <div class="headphone-block">
         <div class="headphone-row">

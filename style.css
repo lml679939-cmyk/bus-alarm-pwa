@@ -1094,6 +1094,77 @@ body {
 }
 
 /* ============================================================
+   音量控制列
+   ============================================================ */
+.volume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.volume-icon { font-size: 18px; }
+
+#volumeSlider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--color-primary) 80%, var(--border) 80%);
+  outline: none;
+}
+
+#volumeSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+#volumeSlider::-moz-range-thumb {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: none;
+  cursor: pointer;
+}
+
+.volume-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-primary);
+  min-width: 28px;
+  text-align: right;
+}
+
+.volume-pct { font-size: 13px; color: var(--text-muted); }
+
+/* ============================================================
+   搜尋結果來源標籤
+   ============================================================ */
+.source-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+.source-tag.poi  { background: #e3f2fd; color: #1565c0; }
+.source-tag.addr { background: #f3e5f5; color: #6a1b9a; }
+
+@media (prefers-color-scheme: dark) {
+  .source-tag.poi  { background: #1a3a6b; color: #90caf9; }
+  .source-tag.addr { background: #2d1b4e; color: #ce93d8; }
+}
+
+/* ============================================================
    RWD：較大螢幕（平板+）
    ============================================================ */
 @media (min-width: 600px) {

@@ -29,6 +29,9 @@ const State = {
   selectedSound:       'melody',  // 選取的音效 key
   headphoneMode:       false,     // 耳機模式開關
   headphonesConnected: false,     // 目前是否偵測到耳機
+  volume:              80,        // 主音量 0~100
+  soundLoop:           null,      // 警報音效循環 timer
+  masterGain:          null,      // Web Audio 主音量 GainNode
 };
 
 /* ---- 震動 Pattern ---- */
@@ -86,6 +89,9 @@ function initMap() {
 
   // 地圖點擊事件（選點模式才生效）
   map.on('click', onMapClick);
+
+  // Flexbox 版面下 Leaflet 需要在 CSS 完成後重算容器大小
+  setTimeout(() => map.invalidateSize(), 200);
 }
 
 function onMapClick(e) {
@@ -143,14 +149,11 @@ function relocate() {
 /** 搜尋框 input 事件：防抖 600ms */
 function onSearchInput(val) {
   clearTimeout(State.searchDebounce);
-  if (val.trim().length < 2) {
-    clearSearchResults();
-    return;
-  }
+  if (val.trim().length < 2) { clearSearchResults(); return; }
   State.searchDebounce = setTimeout(() => searchPlace(), 600);
 }
 
-/** 執行搜尋 */
+/** 執行搜尋（Nominatim 地址 + Overpass POI 雙引擎並行） */
 async function searchPlace() {
   const input = document.getElementById('searchInput');
   const query = input.value.trim();
@@ -159,28 +162,23 @@ async function searchPlace() {
   const btn = document.getElementById('searchBtn');
   btn.textContent = '⏳';
   btn.disabled = true;
+  clearSearchResults();
 
   try {
-    // Nominatim geocoding API（免費，不需要 API key）
-    // viewbox 加上台灣範圍讓結果優先在台灣
-    const url = new URL('https://nominatim.openstreetmap.org/search');
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('q', query);
-    url.searchParams.set('limit', '6');
-    url.searchParams.set('accept-language', 'zh-TW,zh,en');
-    // 若目前有 GPS 位置，用它作為搜尋中心（提升本地結果）
-    if (State.currentLoc) {
-      url.searchParams.set('lat', State.currentLoc.lat);
-      url.searchParams.set('lon', State.currentLoc.lng);
-    }
+    // 兩個 API 並行搜尋，任一完成就先顯示
+    const [nomResult, overpassResult] = await Promise.allSettled([
+      fetchNominatim(query),
+      State.currentLoc
+        ? fetchOverpass(query, State.currentLoc.lat, State.currentLoc.lng)
+        : Promise.resolve([]),
+    ]);
 
-    const res = await fetch(url.toString(), {
-      headers: { 'Accept': 'application/json' }
-    });
+    const nomItems      = nomResult.status === 'fulfilled'      ? nomResult.value      : [];
+    const overpassItems = overpassResult.status === 'fulfilled' ? overpassResult.value : [];
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const results = await res.json();
-    renderSearchResults(results);
+    // 合併：Overpass 結果優先（更精確的 POI），再加 Nominatim
+    const merged = deduplicateResults([...overpassItems, ...nomItems]);
+    renderSearchResults(merged);
   } catch (err) {
     showToast('❌ 搜尋失敗，請確認網路連線');
     console.error('搜尋錯誤：', err);
@@ -190,37 +188,132 @@ async function searchPlace() {
   }
 }
 
+/** Nominatim 地址/地名搜尋 */
+async function fetchNominatim(query) {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('format',          'json');
+  url.searchParams.set('q',               query);
+  url.searchParams.set('limit',           '5');
+  url.searchParams.set('addressdetails',  '1');
+  url.searchParams.set('extratags',       '1');
+  url.searchParams.set('accept-language', 'zh-TW,zh,en');
+  // 優先台灣範圍（不強制限制，讓使用者也能搜尋其他地區）
+  url.searchParams.set('viewbox',  '119.5,21.5,122.5,25.5');
+  url.searchParams.set('bounded',  '0');
+  if (State.currentLoc) {
+    url.searchParams.set('lat', State.currentLoc.lat);
+    url.searchParams.set('lon', State.currentLoc.lng);
+  }
+  const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
+  const data = await res.json();
+  return data.map(item => ({
+    lat:    parseFloat(item.lat),
+    lng:    parseFloat(item.lon),
+    name:   buildDisplayName(item),
+    type:   item.type   || item.class || '',
+    class:  item.class  || '',
+    source: 'nominatim',
+    tags:   item.extratags || {},
+  }));
+}
+
+/**
+ * Overpass API POI 搜尋
+ * 依名稱模糊搜尋周邊 15km 內的 OSM 節點/路徑，
+ * 可找到捷運站、健身房、餐廳、學校等各類地標
+ */
+async function fetchOverpass(query, lat, lng) {
+  // 跳脫 query 中的特殊字元，避免 Overpass QL 注入
+  const safe = query.replace(/[\\"\[\]()]/g, '\\$&');
+
+  const ql = `
+[out:json][timeout:20];
+(
+  node["name"~"${safe}",i](around:15000,${lat},${lng});
+  way["name"~"${safe}",i](around:15000,${lat},${lng});
+  relation["name"~"${safe}",i](around:15000,${lat},${lng});
+);
+out center 8;`.trim();
+
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body:    `data=${encodeURIComponent(ql)}`,
+  });
+  if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+  const data = await res.json();
+
+  return (data.elements || [])
+    .filter(el => el.tags?.name)
+    .map(el => {
+      const elLat = el.lat ?? el.center?.lat;
+      const elLng = el.lon ?? el.center?.lon;
+      if (!elLat || !elLng) return null;
+      return {
+        lat:    elLat,
+        lng:    elLng,
+        name:   el.tags.name,
+        type:   el.tags.amenity || el.tags.shop || el.tags.leisure ||
+                el.tags.public_transport || el.tags.railway || el.type || '',
+        class:  'overpass',
+        source: 'overpass',
+        tags:   el.tags,
+      };
+    })
+    .filter(Boolean);
+}
+
+/** 去重：以座標距離 < 50m 視為同一地點 */
+function deduplicateResults(items) {
+  const out = [];
+  for (const item of items) {
+    const dup = out.some(o =>
+      haversineDistance(item.lat, item.lng, o.lat, o.lng) < 50
+    );
+    if (!dup) out.push(item);
+  }
+  return out.slice(0, 8);
+}
+
+/** 建立顯示名稱（Nominatim 版，去掉過長的縣市後綴） */
+function buildDisplayName(item) {
+  const addr = item.address || {};
+  const parts = [
+    item.namedetails?.name || item.display_name?.split(',')[0],
+    addr.road, addr.suburb, addr.city || addr.town || addr.village,
+  ].filter(Boolean);
+  // 若第一個已是完整名稱（>4字），就只回傳前兩段
+  return parts.slice(0, parts[0]?.length > 4 ? 2 : 3).join('，');
+}
+
 /** 渲染搜尋結果列表 */
 function renderSearchResults(results) {
   const container = document.getElementById('searchResults');
   container.innerHTML = '';
 
   if (!results || results.length === 0) {
-    container.innerHTML = '<div class="search-empty">找不到結果，請嘗試其他關鍵字</div>';
+    container.innerHTML = '<div class="search-empty">找不到結果，請嘗試其他關鍵字或直接在地圖點選</div>';
     return;
   }
 
   results.forEach(item => {
-    const lat  = parseFloat(item.lat);
-    const lng  = parseFloat(item.lon);
-    // 顯示名稱：優先用 display_name，截短至 50 字
-    const name = item.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    const shortName = name.length > 50 ? name.substring(0, 50) + '…' : name;
-
-    // 判斷類型 icon
-    const typeIcon = getTypeIcon(item.type, item.class);
+    const shortName = item.name.length > 40 ? item.name.substring(0, 40) + '…' : item.name;
+    const icon      = getTypeIcon(item.type, item.class, item.tags);
+    const sourceTag = item.source === 'overpass'
+      ? '<span class="source-tag poi">地標</span>'
+      : '<span class="source-tag addr">地址</span>';
 
     const btn = document.createElement('button');
     btn.className = 'result-item';
     btn.innerHTML = `
-      <span class="result-icon">${typeIcon}</span>
+      <span class="result-icon">${icon}</span>
       <div class="result-text">
-        <div class="result-name">${shortName}</div>
-        <div class="result-meta">${item.type || ''} · ${item.class || ''}</div>
-      </div>
-    `;
+        <div class="result-name">${shortName}${sourceTag}</div>
+        <div class="result-meta">${formatTypeMeta(item.type, item.tags)}</div>
+      </div>`;
     btn.onclick = () => {
-      setDestination(lat, lng, name);
+      setDestination(item.lat, item.lng, item.name);
       clearSearchResults();
       document.getElementById('searchInput').value = '';
     };
@@ -228,15 +321,42 @@ function renderSearchResults(results) {
   });
 }
 
-/** 根據 Nominatim 類型回傳對應 emoji */
-function getTypeIcon(type, cls) {
-  if (cls === 'highway' || type === 'bus_stop') return '🚌';
-  if (cls === 'railway' || type === 'station')  return '🚉';
-  if (cls === 'amenity'  || type === 'school')  return '🏫';
-  if (cls === 'shop')                           return '🏪';
-  if (type === 'hospital')                      return '🏥';
-  if (cls === 'building')                       return '🏢';
+/** 根據 OSM type/class/tags 回傳 emoji icon */
+function getTypeIcon(type, cls, tags = {}) {
+  const t = (type || '').toLowerCase();
+  const c = (cls  || '').toLowerCase();
+  if (tags.railway === 'station' || tags.public_transport === 'station' || t === 'station') return '🚉';
+  if (tags.public_transport || t === 'bus_stop' || t === 'stop_position') return '🚌';
+  if (t === 'gym' || t === 'sports_centre' || tags.leisure === 'fitness_centre') return '🏋️';
+  if (t === 'school' || t === 'university' || t === 'college') return '🏫';
+  if (t === 'hospital' || t === 'clinic')  return '🏥';
+  if (t === 'restaurant' || t === 'cafe')  return '🍽️';
+  if (t === 'convenience' || t === 'supermarket') return '🏪';
+  if (t === 'park' || t === 'playground')  return '🌳';
+  if (c === 'highway')                     return '🛣️';
+  if (c === 'building')                    return '🏢';
   return '📌';
+}
+
+/** 格式化類型描述文字 */
+function formatTypeMeta(type, tags = {}) {
+  const mapping = {
+    station:        '捷運/火車站',
+    bus_stop:       '公車站',
+    stop_position:  '公車站',
+    gym:            '健身房',
+    sports_centre:  '運動中心',
+    fitness_centre: '健身房',
+    school:         '學校',
+    university:     '大學',
+    hospital:       '醫院',
+    restaurant:     '餐廳',
+    cafe:           '咖啡廳',
+    convenience:    '便利商店',
+    supermarket:    '超市',
+    park:           '公園',
+  };
+  return mapping[type] || type || '地點';
 }
 
 function clearSearchResults() {
@@ -373,6 +493,7 @@ function stopMonitoring() {
   State.alertPhase   = 0;
   releaseWakeLock();
   stopVibrateLoop();
+  stopSoundLoop();
   hideAlertOverlay();
   updateAllUI();
 
@@ -436,7 +557,10 @@ function triggerAlert(phase, dist) {
     navigator.vibrate(pattern);
     startVibrateLoop(pattern);
   }
-  if (document.getElementById('chkSound').checked) playAlertSound(phase);
+  if (document.getElementById('chkSound').checked) {
+    stopSoundLoop(); // 先停止前一段的循環（如果有）
+    playAlertSound(phase, false, true);
+  }
   if (document.getElementById('chkNotification').checked) sendNotification(phase, distText);
   showAlertOverlay(phase, distText);
   updateStatusBadge('triggered');
@@ -457,147 +581,254 @@ function stopVibrateLoop() {
 }
 
 /* ============================================================
-   音效系統（Web Audio API）
-   五種音效 + 耳機偵測模式
+   音效系統（Web Audio API）v2
+   - 五種音效，音色各異（真實鐘聲、銅管、火警警報等）
+   - 主音量 GainNode 統一控制
+   - 警報觸發後循環播放，直到使用者停止
    ============================================================ */
 
-/* ---- 音效目錄（key → { name, fn(ctx, phase) }） ---- */
+/* ---- 取得/建立主音量節點 ---- */
+function getMasterGain() {
+  const ctx = getAudioCtx();
+  if (!State.masterGain || State.masterGain.context.state === 'closed') {
+    State.masterGain = ctx.createGain();
+    State.masterGain.connect(ctx.destination);
+  }
+  State.masterGain.gain.value = State.volume / 100;
+  return State.masterGain;
+}
+
+function getAudioCtx() {
+  if (!State.audioCtx)
+    State.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (State.audioCtx.state === 'suspended') State.audioCtx.resume();
+  return State.audioCtx;
+}
+
+/* ---- 五種音效定義 ---- */
 const SOUNDS = {
 
-  /** 🎵 上升音階：三音漸升，第2段五音 */
+  /**
+   * 🎵 上升音階：四音 Do-Mi-Sol-Do 漸升，悅耳清晰
+   * 頻率降低至 C4~C5 範圍，耳機聽起來飽滿
+   */
   melody: {
     name: '🎵 上升音階',
-    fn(ctx, phase) {
-      const notes = phase === 1
-        ? [880, 1100, 1320]
-        : [880, 1047, 1320, 1568, 1760];
-      notes.forEach((f, i) =>
-        oscBeep(ctx, ctx.currentTime + i * 0.32, 0.28, f, 'sine', 0.65));
-    },
-  },
-
-  /** 🚨 急促警報：方波快速交替，像電子鬧鐘 */
-  alarm: {
-    name: '🚨 急促警報',
-    fn(ctx, phase) {
-      const count = phase === 1 ? 5 : 10;
-      for (let i = 0; i < count; i++) {
-        oscBeep(ctx, ctx.currentTime + i * 0.22, 0.16,
-          i % 2 === 0 ? 1500 : 1100, 'square', 0.38);
-      }
-    },
-  },
-
-  /** 🔔 鈴聲：正弦波帶長尾音，模擬門鈴 */
-  bell: {
-    name: '🔔 鈴聲',
-    fn(ctx, phase) {
-      const count = phase === 1 ? 3 : 5;
-      for (let i = 0; i < count; i++) {
-        bellTone(ctx, ctx.currentTime + i * 0.6, 1046.5, 0.72);
-      }
-    },
-  },
-
-  /** 📯 號角：三角波模擬銅管，Do-Mi-Sol-Do arpeggio */
-  bugle: {
-    name: '📯 號角',
-    fn(ctx, phase) {
-      // C4 → E4 → G4 → C5（第2段多一次 C5 強調）
-      const seq = phase === 1
-        ? [[523, 0.14], [659, 0.14], [784, 0.14], [1047, 0.38]]
-        : [[523, 0.12], [659, 0.12], [784, 0.12], [1047, 0.22],
-           [1047, 0.12], [784, 0.12], [1047, 0.42]];
-      let t = ctx.currentTime;
-      seq.forEach(([f, d]) => {
-        oscBeep(ctx, t, d, f, 'triangle', 0.7);
-        t += d + 0.025;
+    duration: 2.0,
+    fn(ctx, dest, phase) {
+      const freqs = phase === 1
+        ? [261.6, 329.6, 392.0, 523.2]           // C4 E4 G4 C5
+        : [261.6, 329.6, 392.0, 523.2, 659.3, 783.9]; // + E5 G5
+      freqs.forEach((f, i) => {
+        sineNote(ctx, dest, ctx.currentTime + i * 0.32, 0.28, f);
       });
     },
   },
 
-  /** 🌊 溫柔喚醒：低音量五聲音階漸升，適合淺眠者 */
+  /**
+   * 🚨 急促警報：連續鋸齒波頻率掃描，模擬消防警報
+   * 從 700Hz 升至 1100Hz 再降回，持續重複
+   */
+  alarm: {
+    name: '🚨 急促警報',
+    duration: 3.0,
+    fn(ctx, dest, phase) {
+      const totalDur = phase === 1 ? 3.0 : 5.0;
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.type = 'sawtooth';
+      gain.gain.value = 0.55;
+
+      const now    = ctx.currentTime;
+      const cycles = Math.ceil(totalDur / 0.45);
+      for (let i = 0; i < cycles; i++) {
+        const t = now + i * 0.45;
+        osc.frequency.setValueAtTime(700, t);
+        osc.frequency.linearRampToValueAtTime(1100, t + 0.22);
+        osc.frequency.linearRampToValueAtTime(700, t + 0.45);
+      }
+      osc.start(now);
+      osc.stop(now + totalDur + 0.05);
+    },
+  },
+
+  /**
+   * 🔔 鈴聲：真實鐘聲泛音結構（基頻 + 2.756x + 5.404x 分音）
+   * 瞬間起音，緩慢衰減，帶有金屬共鳴感
+   */
+  bell: {
+    name: '🔔 鈴聲',
+    duration: 4.5,
+    fn(ctx, dest, phase) {
+      const count   = phase === 1 ? 3 : 5;
+      const baseHz  = 523.2; // C5（清脆中頻）
+      for (let i = 0; i < count; i++) {
+        ringBell(ctx, dest, ctx.currentTime + i * 1.1, baseHz);
+      }
+    },
+  },
+
+  /**
+   * 📯 號角：鋸齒波 + 低通濾波器模擬銅管樂器音色
+   * 吹奏感起音（80ms attack），Do-Sol-Do-Sol 軍號旋律
+   */
+  bugle: {
+    name: '📯 號角',
+    duration: 2.5,
+    fn(ctx, dest, phase) {
+      // Do(C4) Sol(G4) Do(C5) Sol(G4) Do(C5) — 軍號衝鋒號
+      const seq = phase === 1
+        ? [[261.6, 0.18], [392.0, 0.18], [523.2, 0.18], [523.2, 0.45]]
+        : [[261.6, 0.14], [392.0, 0.14], [523.2, 0.14], [392.0, 0.14],
+           [523.2, 0.14], [392.0, 0.14], [523.2, 0.55]];
+      let t = ctx.currentTime;
+      seq.forEach(([f, d]) => {
+        brassNote(ctx, dest, t, f, d);
+        t += d + 0.04;
+      });
+    },
+  },
+
+  /**
+   * 🌊 溫柔喚醒：五聲音階，正弦波，音量較低，適合淺眠
+   * C4-D4-E4-G4-A4，間隔較長，輕柔漸升
+   */
   gentle: {
     name: '🌊 溫柔喚醒',
-    fn(ctx, phase) {
-      const notes = phase === 1
-        ? [523, 659, 784, 880]
-        : [523, 659, 784, 880, 1047, 1175];
-      notes.forEach((f, i) =>
-        oscBeep(ctx, ctx.currentTime + i * 0.52, 0.48, f, 'sine', 0.32));
+    duration: 3.5,
+    fn(ctx, dest, phase) {
+      const freqs = phase === 1
+        ? [261.6, 293.7, 329.6, 392.0, 440.0]         // C4 D4 E4 G4 A4
+        : [261.6, 293.7, 329.6, 392.0, 440.0, 523.2, 587.3]; // + C5 D5
+      freqs.forEach((f, i) => {
+        sineNote(ctx, dest, ctx.currentTime + i * 0.55, 0.5, f, 0.42);
+      });
     },
   },
 };
 
 /* ---- 基礎音效積木 ---- */
 
-/**
- * 播放單一振盪器 beep（含淡出）
- * @param {AudioContext} ctx
- * @param {number} t    開始時間（ctx.currentTime 偏移秒數）
- * @param {number} dur  持續秒數
- * @param {number} freq 頻率 Hz
- * @param {OscillatorType} type  sine / square / triangle / sawtooth
- * @param {number} vol  音量 0~1
- */
-function oscBeep(ctx, t, dur, freq, type = 'sine', vol = 0.6) {
+/** 正弦波單音，含快速起音與指數衰減 */
+function sineNote(ctx, dest, t, dur, freq, vol = 0.75) {
   const osc  = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.type = type;
+  gain.connect(dest);
+  osc.type = 'sine';
   osc.frequency.value = freq;
-  gain.gain.setValueAtTime(vol, t);
+  gain.gain.setValueAtTime(0.001, t);
+  gain.gain.linearRampToValueAtTime(vol, t + 0.012);    // 12ms attack
   gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
   osc.start(t);
   osc.stop(t + dur + 0.06);
 }
 
 /**
- * 鈴聲音效：快速起音 + 緩慢衰減，模擬鐘聲
+ * 真實鐘聲：三個泛音疊加
+ * 鐘聲的特徵分音比例：1x、2.756x（小三度泛音）、5.404x
  */
-function bellTone(ctx, t, freq, vol = 0.7) {
-  const osc  = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.type = 'sine';
-  osc.frequency.value = freq;
-  // 快速起音（Attack 0.01s）→ 長尾衰減（Decay ~1s）
-  gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(vol, t + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
-  osc.start(t);
-  osc.stop(t + 1.05);
+function ringBell(ctx, dest, t, baseFreq) {
+  [[1.0, 0.9], [2.756, 0.55], [5.404, 0.25]].forEach(([ratio, relVol]) => {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(dest);
+    osc.type = 'sine';
+    osc.frequency.value = baseFreq * ratio;
+    gain.gain.setValueAtTime(0.001, t);
+    gain.gain.linearRampToValueAtTime(relVol, t + 0.004); // 極快起音（4ms）
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.6); // 緩慢衰減 1.6s
+    osc.start(t);
+    osc.stop(t + 1.7);
+  });
 }
 
-/* ---- 音效路由：判斷耳機模式 + 呼叫選取音效 ---- */
+/**
+ * 銅管音符：鋸齒波 + 低通濾波器，模擬號角音色
+ * 帶有明顯的吹奏感起音（80ms）與自然收尾
+ */
+function brassNote(ctx, dest, t, freq, dur) {
+  const osc    = ctx.createOscillator();
+  const filter = ctx.createBiquadFilter();
+  const gain   = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(freq * 0.98, t);         // 起音略低（模擬吹氣）
+  osc.frequency.exponentialRampToValueAtTime(freq, t + 0.06);
+
+  filter.type            = 'lowpass';
+  filter.frequency.value = 2200;   // 截掉刺耳高頻
+  filter.Q.value         = 1.8;
+
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(0.82, t + 0.08);   // 80ms attack
+  gain.gain.setValueAtTime(0.75, t + dur - 0.08);
+  gain.gain.linearRampToValueAtTime(0, t + dur);        // 自然收尾
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(dest);
+  osc.start(t);
+  osc.stop(t + dur + 0.06);
+}
+
+/* ---- 主播放入口 ---- */
 
 /**
- * 主播放入口
- * @param {1|2} phase 第幾段警報
- * @param {boolean} [isPreview=false] 試聽模式（跳過耳機檢查）
+ * 播放警報音效
+ * @param {1|2}    phase     第幾段警報
+ * @param {boolean} isPreview 試聽模式（跳過耳機限制）
+ * @param {boolean} startLoop 是否啟動循環（預設 true）
  */
-function playAlertSound(phase, isPreview = false) {
-  // 耳機模式：未插耳機則靜音（試聽時跳過此限制）
+function playAlertSound(phase, isPreview = false, startLoop = true) {
   if (!isPreview && State.headphoneMode && !State.headphonesConnected) {
     showToast('🎧 未偵測到耳機，已略過音效');
     return;
   }
-
   try {
-    if (!State.audioCtx)
-      State.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx  = getAudioCtx();
+    const dest = getMasterGain();
+    const def  = SOUNDS[State.selectedSound] ?? SOUNDS.melody;
+    def.fn(ctx, dest, phase);
 
-    // iOS Safari 需要在使用者互動後 resume
-    if (State.audioCtx.state === 'suspended')
-      State.audioCtx.resume();
-
-    const soundDef = SOUNDS[State.selectedSound] ?? SOUNDS.melody;
-    soundDef.fn(State.audioCtx, phase);
+    // 警報觸發後持續循環，直到使用者停止
+    if (startLoop) startSoundLoop(phase, def.duration ?? 3.0);
   } catch (e) {
     console.warn('音效播放失敗：', e);
   }
+}
+
+/* ---- 音效循環（觸發後持續重複） ---- */
+function startSoundLoop(phase, soundDuration) {
+  stopSoundLoop();
+  const interval = (soundDuration + 2.0) * 1000; // 音效結束後停 2s 再重複
+  State.soundLoop = setInterval(() => {
+    if (!State.isMonitoring) { stopSoundLoop(); return; }
+    try {
+      const ctx  = getAudioCtx();
+      const dest = getMasterGain();
+      const def  = SOUNDS[State.selectedSound] ?? SOUNDS.melody;
+      def.fn(ctx, dest, phase);
+    } catch (e) { console.warn('循環音效失敗：', e); }
+  }, interval);
+}
+
+function stopSoundLoop() {
+  if (State.soundLoop) {
+    clearInterval(State.soundLoop);
+    State.soundLoop = null;
+  }
+}
+
+/* ---- 音量控制 ---- */
+function onVolumeChange(val) {
+  State.volume = parseInt(val, 10);
+  document.getElementById('volumeValue').textContent = State.volume;
+  if (State.masterGain) State.masterGain.gain.value = State.volume / 100;
+  saveSettings();
 }
 
 /* ---- 音效選擇 ---- */
@@ -797,6 +1028,7 @@ function hideAlertOverlay() {
 
 function dismissAlert() {
   stopVibrateLoop();
+  stopSoundLoop();
   hideAlertOverlay();
   stopMonitoring();
   showToast('✅ 提醒已停止，平安抵達！');
@@ -844,6 +1076,7 @@ function saveSettings() {
     radius:           State.radius,
     selectedSound:    State.selectedSound,
     headphoneMode:    State.headphoneMode,
+    volume:           State.volume,
     chkVibrate:       document.getElementById('chkVibrate')?.checked,
     chkSound:         document.getElementById('chkSound')?.checked,
     chkNotification:  document.getElementById('chkNotification')?.checked,
@@ -860,6 +1093,7 @@ function loadSettings() {
     if (d.radius)        State.radius        = d.radius;
     if (d.selectedSound) State.selectedSound = d.selectedSound;
     if (d.headphoneMode) State.headphoneMode = d.headphoneMode;
+    if (d.volume !== undefined) State.volume = d.volume;
 
     requestAnimationFrame(() => {
       // 一般 Toggles
@@ -878,6 +1112,12 @@ function loadSettings() {
       document.querySelectorAll('.sound-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.sound === State.selectedSound);
       });
+
+      // 還原音量滑桿
+      const volSlider = document.getElementById('volumeSlider');
+      const volValue  = document.getElementById('volumeValue');
+      if (volSlider) volSlider.value         = State.volume;
+      if (volValue)  volValue.textContent    = State.volume;
 
       // 初始化耳機狀態顯示
       if (State.headphoneMode) refreshHeadphoneStatus();

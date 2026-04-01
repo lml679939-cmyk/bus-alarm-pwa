@@ -22,6 +22,10 @@ const State = {
   alertPhase:          0,         // 0=未觸發 1=第1段 2=第2段
   watchId:             null,
   wakeLock:            null,
+  silentAudio:         null,      // iOS 靜音音頻節點（背景保活用）
+  silentAudioTimer:    null,      // 定期重啟靜音音頻的 timer
+  gpsRetryTimer:       null,      // GPS 中斷後自動重試 timer
+  lastPositionTime:    0,         // 上次收到 GPS 的時間戳
   mapSelectMode:       false,
   audioCtx:            null,
   vibrateLoop:         null,
@@ -480,7 +484,10 @@ function startMonitoring() {
   );
 
   requestWakeLock();
+  startSilentAudio();     // iOS 背景保活：持續播放靜音音頻
+  startGpsWatchdog();     // GPS 看門狗：偵測訊號中斷並自動重試
   updateAllUI();
+  showIosBackgroundBanner();
   showToast('🚀 已啟動！接近目的地時會提醒你');
 }
 
@@ -492,9 +499,12 @@ function stopMonitoring() {
   State.isMonitoring = false;
   State.alertPhase   = 0;
   releaseWakeLock();
+  stopSilentAudio();
+  stopGpsWatchdog();
   stopVibrateLoop();
   stopSoundLoop();
   hideAlertOverlay();
+  hideIosBackgroundBanner();
   updateAllUI();
 
   // 重置距離卡片
@@ -507,10 +517,12 @@ function stopMonitoring() {
 /** watchPosition 成功回呼 */
 function onPositionUpdate(pos) {
   const { latitude: lat, longitude: lng, accuracy: acc } = pos.coords;
-  State.currentLoc = { lat, lng, accuracy: acc };
+  State.currentLoc    = { lat, lng, accuracy: acc };
+  State.lastPositionTime = Date.now(); // 看門狗：更新最後收到 GPS 的時間
 
   drawCurrentMarker(lat, lng);
   updateCurrentLocUI({ lat, lng }, null, acc);
+  updateGpsStatusUI('ok');
 
   const dist = haversineDistance(lat, lng, State.destination.lat, State.destination.lng);
   updateDistanceUI(dist, acc);
@@ -1006,6 +1018,126 @@ function releaseWakeLock() {
 async function onVisibilityChange() {
   if (document.visibilityState === 'visible' && State.isMonitoring) {
     await requestWakeLock();
+  }
+}
+
+/* ============================================================
+   iOS 背景保活：靜音音頻 Hack
+   原理：讓 AudioContext 持續輸出靜音，使 iOS 將 Safari
+         視為「媒體播放中」，降低系統中斷 GPS 的機率。
+   限制：無法 100% 保證，iOS 版本不同效果有差異。
+   ============================================================ */
+function startSilentAudio() {
+  if (!State.audioCtx) return;
+  stopSilentAudio(); // 避免重複啟動
+
+  const ctx = State.audioCtx;
+
+  /**
+   * 建立一個靜音的 oscillator（音量 = 0）
+   * 每 25 秒重新建立一次，避免 iOS 偵測到長時間靜音而關閉
+   */
+  function createSilentNode() {
+    if (!State.isMonitoring) return;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001; // 極低音量（幾乎靜音，但非 0，確保音頻流不被切斷）
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+
+    // 25 秒後停止這個節點並重建，持續保持音頻流活躍
+    setTimeout(() => {
+      try { osc.stop(); } catch (_) {}
+      if (State.isMonitoring) createSilentNode();
+    }, 25000);
+
+    State.silentAudio = osc;
+  }
+
+  // 初始化 AudioContext（需要在使用者點擊後）
+  try {
+    createSilentNode();
+    console.log('🎵 靜音音頻已啟動（iOS 背景保活）');
+  } catch (e) {
+    console.warn('靜音音頻啟動失敗：', e);
+  }
+}
+
+function stopSilentAudio() {
+  if (State.silentAudio) {
+    try { State.silentAudio.stop(); } catch (_) {}
+    State.silentAudio = null;
+  }
+}
+
+/* ============================================================
+   GPS 看門狗：自動偵測 GPS 中斷並重啟 watchPosition
+   當超過 45 秒沒收到 GPS 更新，自動重新呼叫 watchPosition
+   ============================================================ */
+function startGpsWatchdog() {
+  stopGpsWatchdog();
+  State.lastPositionTime = Date.now();
+
+  State.gpsRetryTimer = setInterval(() => {
+    if (!State.isMonitoring) { stopGpsWatchdog(); return; }
+
+    const elapsed = Date.now() - State.lastPositionTime;
+
+    if (elapsed > 45000) {
+      // 超過 45 秒沒訊號，嘗試重啟 watchPosition
+      console.warn(`GPS 中斷 ${Math.round(elapsed/1000)}s，自動重試...`);
+      updateGpsStatusUI('retry');
+
+      if (State.watchId !== null) {
+        navigator.geolocation.clearWatch(State.watchId);
+      }
+
+      // 重新啟動 watchPosition
+      State.watchId = navigator.geolocation.watchPosition(
+        onPositionUpdate,
+        onPositionError,
+        { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
+      );
+
+      State.lastPositionTime = Date.now(); // 重置計時
+      showToast('⚡ GPS 訊號恢復中，重新定位…');
+    }
+  }, 15000); // 每 15 秒檢查一次
+}
+
+function stopGpsWatchdog() {
+  if (State.gpsRetryTimer) {
+    clearInterval(State.gpsRetryTimer);
+    State.gpsRetryTimer = null;
+  }
+}
+
+/* ============================================================
+   iOS 背景提示 Banner（啟動監聽後顯示）
+   ============================================================ */
+function showIosBackgroundBanner() {
+  const banner = document.getElementById('iosBackgroundBanner');
+  if (banner) banner.style.display = 'block';
+}
+
+function hideIosBackgroundBanner() {
+  const banner = document.getElementById('iosBackgroundBanner');
+  if (banner) banner.style.display = 'none';
+}
+
+/** GPS 狀態 UI 更新（看門狗用） */
+function updateGpsStatusUI(state) {
+  const el = document.getElementById('gpsStatusPill');
+  if (!el) return;
+  if (state === 'ok') {
+    el.textContent    = '📡 GPS 訊號正常';
+    el.dataset.status = 'ok';
+  } else if (state === 'retry') {
+    el.textContent    = '⚡ GPS 重新連線中…';
+    el.dataset.status = 'retry';
   }
 }
 

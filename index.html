@@ -213,18 +213,65 @@
       </button>
     </section>
 
-    <!-- Wake Lock 提醒 -->
-    <div class="wake-lock-warning" id="wakeLockWarning" style="display:none">
-      ⚠️ <strong>建議保持畫面開啟！</strong>螢幕關閉後 GPS 可能中斷。請調低亮度省電即可。
+    <!-- ===== iOS 背景運作指引 Banner（啟動後顯示） ===== -->
+    <div class="ios-background-banner" id="iosBackgroundBanner" style="display:none">
+      <div class="ios-banner-header">
+        <span class="ios-banner-icon">📱</span>
+        <strong>背景運作設定</strong>
+        <button class="ios-banner-close" onclick="document.getElementById('iosBackgroundBanner').style.display='none'">✕</button>
+      </div>
+
+      <!-- GPS 狀態膠囊 -->
+      <div class="gps-status-pill" id="gpsStatusPill" data-status="ok">
+        📡 GPS 訊號正常
+      </div>
+
+      <!-- 步驟卡片 -->
+      <div class="ios-steps">
+        <div class="ios-step">
+          <span class="step-num">1</span>
+          <div class="step-body">
+            <div class="step-title">調低螢幕亮度</div>
+            <div class="step-desc">從右上角下滑控制中心，將亮度調至最低，省電同時保持螢幕亮著</div>
+          </div>
+        </div>
+        <div class="ios-step">
+          <span class="step-num">2</span>
+          <div class="step-body">
+            <div class="step-title">不要切換到其他 App</div>
+            <div class="step-desc">讓本頁保持在前景。若需要滑手機，可以長按側邊鍵鎖定畫面（螢幕保持亮著）</div>
+          </div>
+        </div>
+        <div class="ios-step">
+          <span class="step-num">3</span>
+          <div class="step-body">
+            <div class="step-title">關閉「自動鎖定」（可選）</div>
+            <div class="step-desc">設定 → 螢幕顯示與亮度 → 自動鎖定 → 選「永不」，搭車結束後記得改回來</div>
+          </div>
+        </div>
+        <div class="ios-step ios-step-hack">
+          <span class="step-num">⚡</span>
+          <div class="step-body">
+            <div class="step-title">靜音保活已啟動</div>
+            <div class="step-desc">App 正在背景播放極低音量音頻，讓 iOS 維持 GPS 運作（音量設為 0 不影響）</div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- 背景限制說明 -->
+    <!-- Wake Lock 提醒（Wake Lock 不支援時顯示） -->
+    <div class="wake-lock-warning" id="wakeLockWarning" style="display:none">
+      ⚠️ <strong>此裝置不支援螢幕常亮鎖定</strong>，請手動保持螢幕開啟，否則 GPS 可能中斷。
+    </div>
+
+    <!-- 背景限制說明（折疊） -->
     <details class="info-details">
-      <summary>📱 關於背景執行限制</summary>
+      <summary>📱 關於背景執行限制（詳細說明）</summary>
       <div class="info-content">
-        <p><strong>Android Chrome：</strong>畫面關閉後 GPS 數分鐘內暫停，建議保持畫面開啟。</p>
-        <p><strong>iOS Safari：</strong>進入背景後 GPS 立即停止，必須保持 Safari 在前景。</p>
-        <p><strong>建議：</strong>啟動後調低螢幕亮度，讓 App 保持在前景即可。</p>
+        <p><strong>Android Chrome：</strong>螢幕關閉後 GPS 數分鐘內暫停。建議保持畫面開啟，或使用 PWA 安裝版本效果更佳。</p>
+        <p><strong>iOS Safari：</strong>切換到背景後 GPS 立即停止。本 App 已啟用靜音音頻保活技術，但仍建議保持 Safari 在前景。</p>
+        <p><strong>GPS 看門狗：</strong>若 45 秒內未收到 GPS 更新，App 會自動重新啟動定位，無需手動操作。</p>
+        <p><strong>根本解法：</strong>將本 App 加入主畫面後使用原生安裝版，或未來升級為 Capacitor 原生 App 可取得完整背景定位權限。</p>
       </div>
     </details>
 

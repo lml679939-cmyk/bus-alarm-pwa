@@ -1023,54 +1023,96 @@ async function onVisibilityChange() {
 
 /* ============================================================
    iOS 背景保活：靜音音頻 Hack
-   原理：讓 AudioContext 持續輸出靜音，使 iOS 將 Safari
-         視為「媒體播放中」，降低系統中斷 GPS 的機率。
-   限制：無法 100% 保證，iOS 版本不同效果有差異。
+   原理：讓 AudioContext 持續輸出極低音量音頻，使 iOS 將
+         Safari 視為「媒體播放中」，降低 GPS 被中斷的機率。
+
+   修正：
+   1. 不依賴 audioCtx 是否已存在，啟動時自行確保 ctx 建立
+   2. 改用 setInterval 定時重建節點（比遞迴 setTimeout 更穩定）
+   3. 監聽 visibilitychange：回到前景時自動 resume AudioContext，
+      解決聽外部音樂後 ctx 被 suspend 的問題
    ============================================================ */
 function startSilentAudio() {
-  if (!State.audioCtx) return;
   stopSilentAudio(); // 避免重複啟動
+
+  // 確保 AudioContext 存在（不依賴外部 audioCtx 狀態）
+  if (!State.audioCtx) {
+    try {
+      State.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      console.warn('AudioContext 建立失敗，靜音保活無法啟動：', e);
+      return;
+    }
+  }
 
   const ctx = State.audioCtx;
 
-  /**
-   * 建立一個靜音的 oscillator（音量 = 0）
-   * 每 25 秒重新建立一次，避免 iOS 偵測到長時間靜音而關閉
-   */
+  /** 播放一個 25 秒的極低音量 oscillator，維持音頻流活躍 */
   function createSilentNode() {
     if (!State.isMonitoring) return;
-    if (ctx.state === 'suspended') ctx.resume();
+
+    // 若 AudioContext 被外部音樂 App 搶走焦點而 suspend，先嘗試 resume
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
 
     const osc  = ctx.createOscillator();
     const gain = ctx.createGain();
-    gain.gain.value = 0.0001; // 極低音量（幾乎靜音，但非 0，確保音頻流不被切斷）
+    gain.gain.value = 0.0001; // 人耳聽不到，但音頻流不是靜止的
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
-
-    // 25 秒後停止這個節點並重建，持續保持音頻流活躍
-    setTimeout(() => {
-      try { osc.stop(); } catch (_) {}
-      if (State.isMonitoring) createSilentNode();
-    }, 25000);
+    osc.stop(ctx.currentTime + 25); // 25 秒後自動結束
 
     State.silentAudio = osc;
   }
 
-  // 初始化 AudioContext（需要在使用者點擊後）
+  // 立即啟動第一個節點
   try {
     createSilentNode();
-    console.log('🎵 靜音音頻已啟動（iOS 背景保活）');
+    console.log('🎵 靜音保活已啟動');
   } catch (e) {
     console.warn('靜音音頻啟動失敗：', e);
+    return;
+  }
+
+  // 每 24 秒重建一次（比節點壽命 25s 略短，確保無縫接續）
+  State.silentAudioTimer = setInterval(() => {
+    if (!State.isMonitoring) { stopSilentAudio(); return; }
+    try { createSilentNode(); } catch (e) { console.warn('靜音節點重建失敗：', e); }
+  }, 24000);
+
+  // 監聽音頻焦點恢復：使用者聽完外部音樂回到本 App 時自動重啟
+  // （iOS 聽音樂會 suspend AudioContext，回到前景需要 resume）
+  document.addEventListener('visibilitychange', onSilentAudioVisibility);
+}
+
+/** 頁面重新可見時（例如從音樂 App 切回來），resume AudioContext */
+function onSilentAudioVisibility() {
+  if (document.visibilityState !== 'visible') return;
+  if (!State.isMonitoring || !State.audioCtx) return;
+
+  const ctx = State.audioCtx;
+  if (ctx.state === 'suspended') {
+    ctx.resume().then(() => {
+      console.log('🎵 AudioContext resumed（從背景返回）');
+    }).catch(() => {});
   }
 }
 
 function stopSilentAudio() {
+  // 停止定時器
+  if (State.silentAudioTimer) {
+    clearInterval(State.silentAudioTimer);
+    State.silentAudioTimer = null;
+  }
+  // 停止當前音頻節點
   if (State.silentAudio) {
     try { State.silentAudio.stop(); } catch (_) {}
     State.silentAudio = null;
   }
+  // 移除可見性監聽
+  document.removeEventListener('visibilitychange', onSilentAudioVisibility);
 }
 
 /* ============================================================

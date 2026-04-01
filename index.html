@@ -55,8 +55,9 @@
 
   <style>
     /* === 全域基礎 === */
-    * { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-    body { background-color: #FAF8F4; overscroll-behavior: none; }
+    * { -webkit-tap-highlight-color: transparent; }
+    body { background-color: #FAF8F4; overscroll-behavior: none; touch-action: pan-y; }
+    button, a, input, select, label, [role="button"] { touch-action: manipulation; }
 
     /* === 地圖容器 === */
     #map {

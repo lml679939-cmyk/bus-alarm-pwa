@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#1565c0">
+  <meta name="theme-color" content="#F5A623">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="公車到站提醒">
@@ -13,281 +13,650 @@
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="style.css">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            cream:   '#FAF8F4',
+            card:    '#FFFFFF',
+            warm:    '#F5A623',
+            'warm-light': '#FFF3D6',
+            mint:    '#A8D5BA',
+            'mint-light': '#E8F7EE',
+            lavender:'#C4A8D5',
+            'lav-light': '#F2ECF9',
+            coral:   '#F28B82',
+            'coral-light': '#FDECEA',
+            sage:    '#8FAF7E',
+            muted:   '#9B9080',
+            dark:    '#3D3530',
+          },
+          fontFamily: {
+            sans: ['-apple-system','BlinkMacSystemFont','Noto Sans TC','PingFang TC','sans-serif'],
+          },
+          borderRadius: {
+            '4xl': '2rem',
+            '5xl': '2.5rem',
+          },
+          boxShadow: {
+            'card': '0 2px 16px rgba(61,53,48,0.07)',
+            'card-hover': '0 6px 24px rgba(61,53,48,0.12)',
+            'warm': '0 4px 20px rgba(245,166,35,0.35)',
+            'coral': '0 4px 20px rgba(242,139,130,0.35)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* === 全域基礎 === */
+    * { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    body { background-color: #FAF8F4; overscroll-behavior: none; }
+
+    /* === 地圖容器 === */
+    #map {
+      width: 100%;
+      height: 220px;
+      border-radius: 1.25rem;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* === 監聽中地圖脈衝邊框 === */
+    #map.monitoring {
+      outline: 3px solid #F5A623;
+      outline-offset: -3px;
+      animation: map-pulse 2s infinite;
+    }
+    @keyframes map-pulse {
+      0%,100% { outline-color: rgba(245,166,35,.9); }
+      50%      { outline-color: rgba(245,166,35,.2); }
+    }
+
+    /* === 距離大數字 === */
+    .distance-number {
+      font-size: 4.5rem;
+      font-weight: 900;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      transition: color .3s;
+    }
+
+    /* === 音效按鈕格線 === */
+    .sound-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; }
+
+    /* === 音效按鈕 === */
+    .sound-btn {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 4px; padding: 10px 4px;
+      border-radius: 14px; border: 2px solid #E8E2D8;
+      background: #FAF8F4; cursor: pointer;
+      transition: all .18s;
+    }
+    .sound-btn.active {
+      border-color: #F5A623; background: #FFF3D6;
+      box-shadow: 0 0 0 3px rgba(245,166,35,.18);
+    }
+    .sound-btn:active { transform: scale(.93); }
+
+    /* === Toggle 開關 === */
+    .toggle-track {
+      position: relative; width: 48px; height: 28px;
+      background: #D5CFC5; border-radius: 14px;
+      transition: background .2s; cursor: pointer;
+      flex-shrink: 0;
+    }
+    .toggle-track::after {
+      content: ''; position: absolute;
+      top: 3px; left: 3px;
+      width: 22px; height: 22px;
+      border-radius: 50%; background: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2);
+      transition: transform .2s;
+    }
+    input[type="checkbox"]:checked + .toggle-track { background: #F5A623; }
+    input[type="checkbox"]:checked + .toggle-track::after { transform: translateX(20px); }
+    input[type="checkbox"] { display: none; }
+
+    /* === 半徑滑桿 === */
+    #radiusSlider {
+      -webkit-appearance: none; height: 6px; border-radius: 3px; outline: none;
+      background: linear-gradient(to right, #F5A623 50%, #E8E2D8 50%);
+    }
+    #radiusSlider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 26px; height: 26px;
+      border-radius: 50%; background: #F5A623;
+      box-shadow: 0 2px 8px rgba(245,166,35,.5); cursor: pointer;
+    }
+
+    /* === 音量滑桿 === */
+    #volumeSlider {
+      -webkit-appearance: none; height: 5px; border-radius: 3px; outline: none;
+      background: linear-gradient(to right, #C4A8D5 80%, #E8E2D8 80%);
+    }
+    #volumeSlider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 22px; height: 22px;
+      border-radius: 50%; background: #C4A8D5;
+      box-shadow: 0 2px 6px rgba(196,168,213,.5); cursor: pointer;
+    }
+
+    /* === 搜尋結果列表 === */
+    #searchResults:not(:empty) {
+      border: 1.5px solid #E8E2D8;
+      border-radius: 14px;
+      overflow: hidden;
+      margin-top: 8px;
+      background: #fff;
+    }
+    .result-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 14px; border: none; border-bottom: 1px solid #F2EDE6;
+      background: transparent; width: 100%; text-align: left; cursor: pointer;
+      transition: background .15s;
+    }
+    .result-item:last-child { border-bottom: none; }
+    .result-item:active { background: #FAF8F4; }
+
+    /* === 地圖選點提示條 === */
+    #mapHintBar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: rgba(245,166,35,.92);
+      color: #fff; display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px; font-size: 14px; font-weight: 600;
+      z-index: 500; backdrop-filter: blur(4px);
+    }
+
+    /* === 耳機狀態 === */
+    .headphone-status { border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+    .headphone-status[data-state="ok"]      { background:#E8F7EE; color:#2e7d32; }
+    .headphone-status[data-state="warn"]    { background:#FDECEA; color:#c62828; }
+    .headphone-status[data-state="unknown"] { background:#FFF3D6; color:#e65100; }
+
+    /* === GPS 狀態膠囊 === */
+    .gps-status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    }
+    .gps-status-pill[data-status="ok"]    { background:#E8F7EE; color:#2e7d32; }
+    .gps-status-pill[data-status="retry"] { background:#FFF3D6; color:#e65100; animation: pulse-badge 1s infinite; }
+
+    /* === 狀態徽章動畫 === */
+    @keyframes pulse-badge {
+      0%,100%{ opacity:1; } 50%{ opacity:.5; }
+    }
+
+    /* === 警報 Overlay === */
+    .alert-overlay {
+      position: fixed; inset: 0; background: rgba(61,53,48,.7);
+      z-index: 9999; display: flex; align-items: center;
+      justify-content: center; padding: 24px;
+      backdrop-filter: blur(8px);
+      animation: overlay-in .3s ease;
+    }
+    @keyframes overlay-in { from{opacity:0} to{opacity:1} }
+    .alert-box {
+      background: #fff; border-radius: 2rem; padding: 32px 24px;
+      width: 100%; max-width: 360px; text-align: center;
+      animation: alert-pop .4s cubic-bezier(.175,.885,.32,1.275);
+    }
+    @keyframes alert-pop { from{transform:scale(.8);opacity:0} to{transform:scale(1);opacity:1} }
+    .alert-icon { font-size: 64px; animation: bounce .6s ease infinite alternate; }
+    @keyframes bounce { from{transform:translateY(0)} to{transform:translateY(-8px)} }
+
+    /* === Toast === */
+    .toast {
+      position: fixed; bottom: calc(env(safe-area-inset-bottom) + 80px);
+      left: 50%; transform: translateX(-50%) translateY(20px);
+      background: rgba(61,53,48,.9); color: #fff;
+      padding: 10px 20px; border-radius: 24px; font-size: 14px; font-weight: 500;
+      white-space: normal; text-align: center; pointer-events: none;
+      opacity: 0; transition: all .3s ease; z-index: 5000;
+      backdrop-filter: blur(8px); max-width: 85vw;
+    }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+    /* === 大按鈕脈衝（監聽中） === */
+    #btnStop { animation: btn-pulse 2s infinite; }
+    @keyframes btn-pulse {
+      0%,100%{ box-shadow: 0 4px 20px rgba(242,139,130,.4); }
+      50%    { box-shadow: 0 4px 32px rgba(242,139,130,.7); }
+    }
+
+    /* === Source tag === */
+    .source-tag {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      padding: 1px 6px; border-radius: 6px; margin-left: 4px; vertical-align: middle;
+    }
+    .source-tag.poi  { background:#FFF3D6; color:#c07c00; }
+    .source-tag.addr { background:#F2ECF9; color:#7b3fa0; }
+
+    /* === 公車插圖動畫 === */
+    .bus-svg { animation: bus-ride 3s ease-in-out infinite alternate; }
+    @keyframes bus-ride {
+      from { transform: translateY(0px) rotate(-1deg); }
+      to   { transform: translateY(-5px) rotate(1deg); }
+    }
+
+    /* === 距離卡片狀態 === */
+    #distanceCard[data-status="nearby"]   { background: linear-gradient(135deg,#FFF3D6,#FFE5A0); }
+    #distanceCard[data-status="triggered"]{ background: linear-gradient(135deg,#FDECEA,#FFD0CB); animation: card-shake .3s ease 3; }
+    @keyframes card-shake {
+      0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)}
+    }
+
+    /* === iOS 步驟卡 === */
+    .ios-step {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: #FAF8F4; border-radius: 12px; padding: 10px 12px;
+    }
+    .step-num {
+      width: 24px; height: 24px; border-radius: 50%; background: #A8D5BA;
+      color: #fff; font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+
+    /* 安全底部間距 */
+    .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 24px); }
+  </style>
 </head>
-<body>
+<body class="min-h-screen bg-cream font-sans">
 
-  <!-- ===== 頂部標題列 ===== -->
-  <header class="app-header">
-    <div class="header-left">
-      <span class="app-icon">🚌</span>
-      <h1 class="app-title">公車到站提醒</h1>
+  <!-- ===================== 頂部問候區 ===================== -->
+  <div class="relative overflow-hidden" style="background: linear-gradient(145deg,#FFF3D6 0%,#FAF8F4 60%)">
+
+    <!-- 頂部狀態列 -->
+    <div class="flex items-center justify-between px-5 pt-14 pb-2">
+      <div>
+        <p class="text-sm text-muted font-medium">出發吧！</p>
+        <h1 class="text-2xl font-black text-dark tracking-tight">公車到站提醒 🚌</h1>
+      </div>
+      <!-- 狀態徽章 -->
+      <div id="statusBadge"
+           class="px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all duration-300"
+           style="background:rgba(245,166,35,.15);border-color:#F5A623;color:#c07c00"
+           data-status="idle">
+        待機中
+      </div>
     </div>
-    <div class="status-badge" id="statusBadge" data-status="idle">待機中</div>
-  </header>
 
-  <!-- ===== 地圖區域 ===== -->
-  <div id="map" role="application" aria-label="位置地圖">
-    <!-- 地圖選點提示條（貼在地圖底部） -->
-    <div class="map-hint-bar" id="mapHintBar" style="display:none">
-      <span>👆 點擊地圖設定目的地</span>
-      <button class="hint-cancel-btn" onclick="cancelMapSelect()">取消</button>
+    <!-- 公車插圖 + 問候卡 -->
+    <div class="mx-4 mb-4 mt-1 rounded-3xl p-5 flex items-center justify-between gap-4"
+         style="background: linear-gradient(135deg,#F5A623 0%,#FFCA5C 100%); box-shadow: 0 6px 24px rgba(245,166,35,.35)">
+      <div class="flex-1">
+        <p class="text-white/80 text-sm font-medium mb-1">搭車不再睡過站！</p>
+        <p class="text-white font-black text-lg leading-snug">設定目的地<br>安心補眠 😴</p>
+      </div>
+      <!-- 公車 SVG 插圖 -->
+      <div class="bus-svg flex-shrink-0">
+        <svg width="90" height="70" viewBox="0 0 90 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- 車身 -->
+          <rect x="5" y="15" width="75" height="38" rx="10" fill="white" fill-opacity=".9"/>
+          <!-- 車頂 -->
+          <rect x="12" y="8" width="61" height="14" rx="6" fill="white" fill-opacity=".7"/>
+          <!-- 車窗 1 -->
+          <rect x="14" y="20" width="18" height="14" rx="4" fill="#FFF3D6"/>
+          <!-- 車窗 2 -->
+          <rect x="36" y="20" width="18" height="14" rx="4" fill="#FFF3D6"/>
+          <!-- 車窗 3 -->
+          <rect x="58" y="20" width="14" height="14" rx="4" fill="#FFF3D6"/>
+          <!-- 門 -->
+          <rect x="36" y="34" width="18" height="19" rx="4" fill="#FFF3D6" fill-opacity=".8"/>
+          <!-- 車輪左 -->
+          <circle cx="20" cy="55" r="9" fill="#3D3530"/>
+          <circle cx="20" cy="55" r="4" fill="#A8A09A"/>
+          <!-- 車輪右 -->
+          <circle cx="65" cy="55" r="9" fill="#3D3530"/>
+          <circle cx="65" cy="55" r="4" fill="#A8A09A"/>
+          <!-- 笑臉 -->
+          <circle cx="23" cy="26" r="2" fill="#F5A623"/>
+          <circle cx="29" cy="26" r="2" fill="#F5A623"/>
+          <path d="M22 30 Q26 33 30 30" stroke="#F5A623" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          <!-- 道路 -->
+          <rect x="0" y="63" width="90" height="7" rx="3.5" fill="white" fill-opacity=".4"/>
+          <rect x="10" y="65.5" width="15" height="2" rx="1" fill="white" fill-opacity=".6"/>
+          <rect x="37" y="65.5" width="15" height="2" rx="1" fill="white" fill-opacity=".6"/>
+          <rect x="64" y="65.5" width="15" height="2" rx="1" fill="white" fill-opacity=".6"/>
+        </svg>
+      </div>
     </div>
   </div>
 
-  <!-- ===== 主面板（可捲動） ===== -->
-  <main class="panel" id="mainPanel">
+  <!-- ===================== 主面板（可捲動） ===================== -->
+  <main id="mainPanel" class="px-4 pb-8 safe-bottom space-y-4 overflow-y-auto" style="overscroll-behavior:contain">
 
-    <!-- 距離顯示卡片 -->
-    <div class="distance-card" id="distanceCard" data-status="idle">
-      <div class="distance-main">
-        <span class="distance-value" id="distanceValue">--</span>
-        <span class="distance-unit">公尺</span>
+    <!-- ===== 距離顯示卡片 ===== -->
+    <div id="distanceCard"
+         class="rounded-3xl p-6 text-center transition-all duration-500 shadow-card"
+         style="background:#fff"
+         data-status="idle">
+      <div class="gps-status-pill mb-3" id="gpsStatusPill" data-status="ok" style="display:none">
+        📡 GPS 訊號正常
       </div>
-      <div class="distance-label" id="distanceLabel">距目的地</div>
-      <div class="accuracy-label" id="accuracyLabel"></div>
+      <div class="distance-number text-warm" id="distanceValue">--</div>
+      <div class="text-muted text-sm mt-1 font-medium" id="distanceLabel">距目的地（公尺）</div>
+      <div class="text-xs text-muted/70 mt-1" id="accuracyLabel"></div>
     </div>
 
-    <!-- ===== 目前位置 ===== -->
-    <section class="section">
-      <h2 class="section-title">📍 目前位置</h2>
-      <div class="info-row" id="currentLocRow">
-        <span class="info-text" id="currentLocText">取得中…</span>
-        <button class="btn btn-sm btn-outline" onclick="relocate()">🔄 重新定位</button>
+    <!-- ===== 目前位置卡片 ===== -->
+    <div class="bg-card rounded-3xl p-5 shadow-card">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-8 h-8 rounded-full bg-mint-light flex items-center justify-center text-base">📍</span>
+        <h2 class="font-bold text-dark text-base">目前位置</h2>
       </div>
-      <div class="accuracy-pill" id="accuracyPill"></div>
-    </section>
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm text-muted font-mono flex-1 leading-snug" id="currentLocText">取得中…</p>
+        <button onclick="relocate()"
+                class="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl border-2 border-mint text-sage transition-all active:scale-95">
+          🔄 重新定位
+        </button>
+      </div>
+      <p class="text-xs text-muted/70 mt-1" id="accuracyPill"></p>
+    </div>
 
-    <!-- ===== 目的地搜尋 ===== -->
-    <section class="section">
-      <h2 class="section-title">🎯 目的地設定</h2>
+    <!-- ===== 地圖 ===== -->
+    <div class="bg-card rounded-3xl p-3 shadow-card">
+      <div id="map">
+        <div id="mapHintBar" style="display:none">
+          <span>👆 點擊地圖設定目的地</span>
+          <button onclick="cancelMapSelect()"
+                  class="text-xs bg-white/30 border border-white/50 text-white rounded-lg px-3 py-1">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 目的地搜尋卡片 ===== -->
+    <div class="bg-card rounded-3xl p-5 shadow-card">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="w-8 h-8 rounded-full bg-mint-light flex items-center justify-center text-base">🎯</span>
+        <h2 class="font-bold text-dark text-base">目的地設定</h2>
+      </div>
 
       <!-- 搜尋框 -->
-      <div class="search-box">
-        <input
-          type="text"
-          id="searchInput"
-          class="search-input"
-          placeholder="輸入地址或公車站名稱…"
-          autocomplete="off"
-          onkeydown="if(event.key==='Enter') searchPlace()"
-          oninput="onSearchInput(this.value)"
-        >
-        <button class="btn btn-primary search-btn" id="searchBtn" onclick="searchPlace()">
+      <div class="flex gap-2 mb-2">
+        <input type="text" id="searchInput"
+               class="flex-1 bg-cream border-2 border-transparent rounded-2xl px-4 py-3 text-sm text-dark placeholder-muted/60 outline-none transition-all focus:border-mint focus:bg-white"
+               placeholder="搜尋地址、捷運站、地標…"
+               autocomplete="off"
+               onkeydown="if(event.key==='Enter') searchPlace()"
+               oninput="onSearchInput(this.value)">
+        <button id="searchBtn" onclick="searchPlace()"
+                class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl transition-all active:scale-95"
+                style="background:#A8D5BA; color:#fff">
           🔍
         </button>
       </div>
 
-      <!-- 搜尋結果列表 -->
-      <div class="search-results" id="searchResults"></div>
+      <!-- 搜尋結果 -->
+      <div id="searchResults" class="max-h-56 overflow-y-auto"></div>
 
-      <!-- 已選目的地顯示 -->
-      <div class="dest-info-box" id="destInfoBox" style="display:none">
-        <div class="dest-name" id="destName">未設定</div>
-        <div class="dest-coords" id="destCoords"></div>
-        <button class="clear-btn" onclick="clearDestination()">✕ 清除</button>
+      <!-- 已選目的地 -->
+      <div id="destInfoBox"
+           class="hidden mt-3 rounded-2xl p-4 border-2 border-mint flex items-start gap-3"
+           style="background:#E8F7EE">
+        <span class="text-2xl flex-shrink-0">🎯</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-bold text-dark leading-snug" id="destName">未設定</p>
+          <p class="text-xs text-muted font-mono mt-0.5" id="destCoords"></p>
+        </div>
+        <button onclick="clearDestination()"
+                class="text-muted text-xs border border-gray-200 rounded-lg px-2 py-1 flex-shrink-0 transition-all active:scale-95">
+          ✕
+        </button>
       </div>
 
       <!-- 在地圖上選取 -->
-      <button class="btn btn-outline btn-block" id="btnMapSelect" onclick="toggleMapSelect()" style="margin-top:10px">
+      <button id="btnMapSelect" onclick="toggleMapSelect()"
+              class="w-full mt-3 py-3 rounded-2xl border-2 border-dashed border-mint text-sage text-sm font-semibold transition-all active:scale-95">
         🗺️ 或在地圖上直接點選目的地
       </button>
-    </section>
+    </div>
 
-    <!-- ===== 提醒半徑 ===== -->
-    <section class="section">
-      <h2 class="section-title">🎯 提醒半徑</h2>
-      <div class="radius-row">
+    <!-- ===== 提醒半徑卡片 ===== -->
+    <div class="bg-card rounded-3xl p-5 shadow-card">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="w-8 h-8 rounded-full bg-warm-light flex items-center justify-center text-base">🎯</span>
+        <h2 class="font-bold text-dark text-base">提醒半徑</h2>
+      </div>
+
+      <!-- 滑桿 -->
+      <div class="flex items-center gap-3 mb-4">
         <input type="range" id="radiusSlider" min="200" max="800" step="50" value="500"
-               oninput="onRadiusChange(this.value)" aria-label="提醒半徑">
-        <div class="radius-display">
-          <span id="radiusValue">500</span>&nbsp;公尺
+               class="flex-1" oninput="onRadiusChange(this.value)" aria-label="提醒半徑">
+        <div class="text-right min-w-20">
+          <span id="radiusValue" class="text-2xl font-black text-warm">500</span>
+          <span class="text-xs text-muted ml-1">公尺</span>
         </div>
       </div>
-      <div class="preset-row">
-        <button class="preset-btn" data-r="200" onclick="setRadius(200)">近 200m</button>
-        <button class="preset-btn active" data-r="500" onclick="setRadius(500)">標準 500m</button>
-        <button class="preset-btn" data-r="800" onclick="setRadius(800)">遠 800m</button>
-      </div>
-      <p class="hint-text">⚡ 距離 ≤ 200m 時將觸發加強版震動</p>
-    </section>
 
-    <!-- ===== 提醒方式 ===== -->
-    <section class="section">
-      <h2 class="section-title">🔔 提醒方式</h2>
-      <div class="toggle-list">
-        <label class="toggle-item">
-          <span class="toggle-label">📳 震動提醒</span>
-          <div class="toggle-wrapper">
+      <!-- 預設按鈕 -->
+      <div class="grid grid-cols-3 gap-2 mb-3">
+        <button class="preset-btn py-2.5 rounded-2xl border-2 border-gray-200 bg-cream text-sm font-bold text-muted transition-all active:scale-95"
+                data-r="200" onclick="setRadius(200)">近 200m</button>
+        <button class="preset-btn py-2.5 rounded-2xl border-2 text-sm font-bold transition-all active:scale-95 active"
+                style="border-color:#F5A623;background:#FFF3D6;color:#c07c00"
+                data-r="500" onclick="setRadius(500)">標準 500m</button>
+        <button class="preset-btn py-2.5 rounded-2xl border-2 border-gray-200 bg-cream text-sm font-bold text-muted transition-all active:scale-95"
+                data-r="800" onclick="setRadius(800)">遠 800m</button>
+      </div>
+
+      <p class="text-xs text-muted/70">⚡ 距離 ≤ 200m 時觸發加強版震動與警報</p>
+    </div>
+
+    <!-- ===== 提醒方式卡片 ===== -->
+    <div class="bg-card rounded-3xl p-5 shadow-card">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="w-8 h-8 rounded-full bg-lav-light flex items-center justify-center text-base">🔔</span>
+        <h2 class="font-bold text-dark text-base">提醒方式</h2>
+      </div>
+
+      <div class="space-y-1">
+        <!-- 震動 -->
+        <label class="flex items-center justify-between py-3 border-b border-gray-100 cursor-pointer">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">📳</span>
+            <span class="text-sm font-semibold text-dark">震動提醒</span>
+          </div>
+          <div class="flex items-center gap-2">
             <input type="checkbox" id="chkVibrate" checked onchange="saveSettings()">
             <span class="toggle-track"></span>
           </div>
         </label>
-        <label class="toggle-item">
-          <span class="toggle-label">🔊 聲音提醒</span>
-          <div class="toggle-wrapper">
+        <!-- 聲音 -->
+        <label class="flex items-center justify-between py-3 border-b border-gray-100 cursor-pointer">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">🔊</span>
+            <span class="text-sm font-semibold text-dark">聲音提醒</span>
+          </div>
+          <div class="flex items-center gap-2">
             <input type="checkbox" id="chkSound" checked onchange="saveSettings()">
             <span class="toggle-track"></span>
           </div>
         </label>
-        <label class="toggle-item">
-          <span class="toggle-label">🔔 系統通知</span>
-          <div class="toggle-wrapper">
+        <!-- 系統通知 -->
+        <label class="flex items-center justify-between py-3 cursor-pointer">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">🔔</span>
+            <span class="text-sm font-semibold text-dark">系統通知</span>
+          </div>
+          <div class="flex items-center gap-2">
             <input type="checkbox" id="chkNotification" checked onchange="onNotificationToggle()">
             <span class="toggle-track"></span>
           </div>
         </label>
       </div>
-    </section>
+    </div>
 
-    <!-- ===== 警報音效選擇 ===== -->
-    <section class="section" id="soundSection">
-      <h2 class="section-title">🎵 警報音效</h2>
+    <!-- ===== 警報音效卡片 ===== -->
+    <div class="bg-card rounded-3xl p-5 shadow-card" id="soundSection">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="w-8 h-8 rounded-full bg-lav-light flex items-center justify-center text-base">🎵</span>
+        <h2 class="font-bold text-dark text-base">警報音效</h2>
+      </div>
 
-      <!-- 五種音效選項 -->
-      <div class="sound-grid">
+      <!-- 音效選擇 -->
+      <div class="sound-grid mb-4">
         <button class="sound-btn active" data-sound="melody" onclick="selectSound('melody')">
-          <span class="sound-emoji">🎵</span>
-          <span class="sound-name">上升音階</span>
+          <span class="text-2xl">🎵</span>
+          <span class="text-xs font-semibold text-muted text-center leading-tight">上升音階</span>
         </button>
         <button class="sound-btn" data-sound="alarm" onclick="selectSound('alarm')">
-          <span class="sound-emoji">🚨</span>
-          <span class="sound-name">急促警報</span>
+          <span class="text-2xl">🚨</span>
+          <span class="text-xs font-semibold text-muted text-center leading-tight">急促警報</span>
         </button>
         <button class="sound-btn" data-sound="bell" onclick="selectSound('bell')">
-          <span class="sound-emoji">🔔</span>
-          <span class="sound-name">鈴聲</span>
+          <span class="text-2xl">🔔</span>
+          <span class="text-xs font-semibold text-muted text-center leading-tight">鈴聲</span>
         </button>
         <button class="sound-btn" data-sound="bugle" onclick="selectSound('bugle')">
-          <span class="sound-emoji">📯</span>
-          <span class="sound-name">號角</span>
+          <span class="text-2xl">📯</span>
+          <span class="text-xs font-semibold text-muted text-center leading-tight">號角</span>
         </button>
         <button class="sound-btn" data-sound="gentle" onclick="selectSound('gentle')">
-          <span class="sound-emoji">🌊</span>
-          <span class="sound-name">溫柔喚醒</span>
+          <span class="text-2xl">🌊</span>
+          <span class="text-xs font-semibold text-muted text-center leading-tight">溫柔喚醒</span>
         </button>
       </div>
 
       <!-- 試聽按鈕 -->
-      <button class="btn btn-outline btn-block" id="previewBtn" onclick="previewSound()">
+      <button id="previewBtn" onclick="previewSound()"
+              class="w-full py-3 rounded-2xl border-2 border-lavender text-lavender text-sm font-bold mb-4 transition-all active:scale-95"
+              style="color:#9d6eb3; border-color:#C4A8D5">
         ▶️ 試聽選取音效
       </button>
 
-      <!-- 音量控制 -->
-      <div class="volume-row">
-        <span class="volume-icon">🔈</span>
+      <!-- 音量 -->
+      <div class="flex items-center gap-3 mb-4">
+        <span class="text-lg">🔈</span>
         <input type="range" id="volumeSlider" min="0" max="100" step="5" value="80"
-               oninput="onVolumeChange(this.value)" aria-label="音量">
-        <span class="volume-icon">🔊</span>
-        <span class="volume-value" id="volumeValue">80</span>
-        <span class="volume-pct">%</span>
+               class="flex-1" oninput="onVolumeChange(this.value)" aria-label="音量">
+        <span class="text-lg">🔊</span>
+        <span class="text-base font-black min-w-8 text-right" id="volumeValue"
+              style="color:#C4A8D5">80</span>
+        <span class="text-xs text-muted">%</span>
       </div>
 
       <!-- 耳機模式 -->
-      <div class="headphone-block">
-        <div class="headphone-row">
-          <div class="headphone-info">
-            <span class="headphone-title">🎧 耳機模式</span>
-            <span class="headphone-desc">開啟後未偵測到耳機將不發聲，避免打擾鄰座</span>
+      <div class="rounded-2xl p-4" style="background:#F2ECF9">
+        <div class="flex items-start justify-between gap-3 mb-2">
+          <div>
+            <p class="text-sm font-bold text-dark">🎧 耳機模式</p>
+            <p class="text-xs text-muted mt-0.5 leading-snug">開啟後未插耳機將不發聲，避免打擾鄰座</p>
           </div>
-          <div class="toggle-wrapper">
+          <label class="flex items-center gap-2 mt-0.5 flex-shrink-0 cursor-pointer">
             <input type="checkbox" id="chkHeadphone" onchange="onHeadphoneModeToggle()">
             <span class="toggle-track"></span>
-          </div>
+          </label>
         </div>
-        <!-- 即時偵測狀態 -->
-        <div class="headphone-status" id="headphoneStatus" style="display:none">
+        <div id="headphoneStatus" class="headphone-status hidden" style="margin-top:4px">
           <span id="headphoneStatusIcon">🎧</span>
-          <span id="headphoneStatusText">偵測中…</span>
+          <span id="headphoneStatusText" class="ml-1.5">偵測中…</span>
         </div>
       </div>
-    </section>
+    </div>
 
     <!-- ===== 主控制按鈕 ===== -->
-    <section class="section control-section">
-      <button class="btn btn-primary btn-huge" id="btnStart" onclick="startMonitoring()">
+    <div class="px-1 space-y-3">
+      <button id="btnStart" onclick="startMonitoring()"
+              class="w-full py-5 rounded-3xl text-white text-xl font-black tracking-wide transition-all active:scale-95"
+              style="background:linear-gradient(135deg,#F5A623,#FF8C42);box-shadow:0 6px 24px rgba(245,166,35,.45)">
         🚀 啟動到站提醒
       </button>
-      <button class="btn btn-danger btn-huge" id="btnStop" onclick="stopMonitoring()" style="display:none">
+      <button id="btnStop" onclick="stopMonitoring()"
+              class="w-full py-5 rounded-3xl text-white text-xl font-black tracking-wide transition-all active:scale-95"
+              style="display:none;background:linear-gradient(135deg,#F28B82,#E07070)">
         ⏹ 停止監聽
       </button>
-    </section>
+    </div>
 
-    <!-- ===== iOS 背景運作指引 Banner（啟動後顯示） ===== -->
-    <div class="ios-background-banner" id="iosBackgroundBanner" style="display:none">
-      <div class="ios-banner-header">
-        <span class="ios-banner-icon">📱</span>
-        <strong>背景運作設定</strong>
-        <button class="ios-banner-close" onclick="document.getElementById('iosBackgroundBanner').style.display='none'">✕</button>
+    <!-- ===== iOS 背景運作指引 ===== -->
+    <div id="iosBackgroundBanner" class="rounded-3xl p-5 shadow-card" style="display:none;background:linear-gradient(135deg,#E8F7EE,#F0FBF4);border:2px solid #A8D5BA">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">📱</span>
+          <span class="font-bold text-dark text-sm">背景運作已啟動</span>
+        </div>
+        <button onclick="document.getElementById('iosBackgroundBanner').style.display='none'"
+                class="text-muted text-sm w-7 h-7 rounded-full bg-white/60 flex items-center justify-center">✕</button>
       </div>
 
-      <!-- GPS 狀態膠囊 -->
-      <div class="gps-status-pill" id="gpsStatusPill" data-status="ok">
+      <!-- GPS 狀態 -->
+      <div class="gps-status-pill mb-4" id="gpsStatusPill" data-status="ok">
         📡 GPS 訊號正常
       </div>
 
-      <!-- 步驟卡片 -->
-      <div class="ios-steps">
+      <div class="space-y-2">
         <div class="ios-step">
-          <span class="step-num">1</span>
-          <div class="step-body">
-            <div class="step-title">調低螢幕亮度</div>
-            <div class="step-desc">從右上角下滑控制中心，將亮度調至最低，省電同時保持螢幕亮著</div>
+          <div class="step-num">1</div>
+          <div>
+            <p class="text-sm font-bold text-dark">調低螢幕亮度</p>
+            <p class="text-xs text-muted mt-0.5">從右上角下滑控制中心調至最低，省電保持畫面亮著</p>
           </div>
         </div>
         <div class="ios-step">
-          <span class="step-num">2</span>
-          <div class="step-body">
-            <div class="step-title">不要切換到其他 App</div>
-            <div class="step-desc">讓本頁保持在前景。若需要滑手機，可以長按側邊鍵鎖定畫面（螢幕保持亮著）</div>
+          <div class="step-num">2</div>
+          <div>
+            <p class="text-sm font-bold text-dark">不要切換到其他 App</p>
+            <p class="text-xs text-muted mt-0.5">保持本頁在前景，可搭配「自動鎖定 → 永不」使用</p>
           </div>
         </div>
-        <div class="ios-step">
-          <span class="step-num">3</span>
-          <div class="step-body">
-            <div class="step-title">關閉「自動鎖定」（可選）</div>
-            <div class="step-desc">設定 → 螢幕顯示與亮度 → 自動鎖定 → 選「永不」，搭車結束後記得改回來</div>
-          </div>
-        </div>
-        <div class="ios-step ios-step-hack">
-          <span class="step-num">⚡</span>
-          <div class="step-body">
-            <div class="step-title">靜音保活已啟動</div>
-            <div class="step-desc">App 正在背景播放極低音量音頻，讓 iOS 維持 GPS 運作（音量設為 0 不影響）</div>
+        <div class="ios-step" style="background:#FFF3D6">
+          <div class="step-num" style="background:#F5A623">⚡</div>
+          <div>
+            <p class="text-sm font-bold text-dark">靜音保活已啟動</p>
+            <p class="text-xs text-muted mt-0.5">App 正在播放極低音量音頻，幫助 iOS 維持 GPS 運作</p>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Wake Lock 提醒（Wake Lock 不支援時顯示） -->
-    <div class="wake-lock-warning" id="wakeLockWarning" style="display:none">
+    <!-- ===== Wake Lock 警告 ===== -->
+    <div id="wakeLockWarning"
+         class="hidden rounded-2xl p-4 border-2 border-warm text-sm font-medium leading-snug"
+         style="background:#FFF3D6;color:#8B5E00">
       ⚠️ <strong>此裝置不支援螢幕常亮鎖定</strong>，請手動保持螢幕開啟，否則 GPS 可能中斷。
     </div>
 
-    <!-- 背景限制說明（折疊） -->
-    <details class="info-details">
-      <summary>📱 關於背景執行限制（詳細說明）</summary>
-      <div class="info-content">
-        <p><strong>Android Chrome：</strong>螢幕關閉後 GPS 數分鐘內暫停。建議保持畫面開啟，或使用 PWA 安裝版本效果更佳。</p>
-        <p><strong>iOS Safari：</strong>切換到背景後 GPS 立即停止。本 App 已啟用靜音音頻保活技術，但仍建議保持 Safari 在前景。</p>
-        <p><strong>GPS 看門狗：</strong>若 45 秒內未收到 GPS 更新，App 會自動重新啟動定位，無需手動操作。</p>
-        <p><strong>根本解法：</strong>將本 App 加入主畫面後使用原生安裝版，或未來升級為 Capacitor 原生 App 可取得完整背景定位權限。</p>
+    <!-- ===== 背景限制說明（折疊） ===== -->
+    <details class="bg-card rounded-3xl shadow-card overflow-hidden">
+      <summary class="flex items-center justify-between px-5 py-4 cursor-pointer list-none select-none">
+        <div class="flex items-center gap-2">
+          <span class="text-base">💡</span>
+          <span class="font-bold text-sm text-dark">關於背景執行限制</span>
+        </div>
+        <span class="text-muted text-xs details-arrow">▼</span>
+      </summary>
+      <div class="px-5 pb-5 space-y-2 text-xs text-muted leading-relaxed border-t border-gray-100 pt-3">
+        <p><strong class="text-dark">Android Chrome：</strong>螢幕關閉後 GPS 數分鐘內暫停，建議保持畫面開啟。</p>
+        <p><strong class="text-dark">iOS Safari：</strong>切換到背景後 GPS 立即停止。本 App 已啟用靜音音頻保活技術。</p>
+        <p><strong class="text-dark">GPS 看門狗：</strong>若 45 秒未收到 GPS，App 自動重新啟動定位。</p>
+        <p><strong class="text-dark">根本解法：</strong>打包成 Capacitor 原生 App 可取得完整背景定位權限。</p>
       </div>
     </details>
 
+    <!-- 底部留白 -->
+    <div class="h-4"></div>
   </main>
 
   <!-- ===== 到站警報 Overlay ===== -->
   <div class="alert-overlay" id="alertOverlay" role="alertdialog" aria-modal="true" style="display:none">
     <div class="alert-box">
-      <div class="alert-icon" id="alertIcon">🎯</div>
-      <h2 class="alert-title" id="alertTitle">快到站了！</h2>
-      <p class="alert-message" id="alertMessage">距離目的地還有 XXX 公尺，請準備下車！</p>
-      <div class="alert-btn-group">
-        <button class="btn btn-success btn-large" onclick="dismissAlert()">
+      <div class="alert-icon mb-3" id="alertIcon">🎯</div>
+      <h2 class="text-2xl font-black text-dark mb-2" id="alertTitle">快到站了！</h2>
+      <p class="text-sm text-muted leading-relaxed mb-6" id="alertMessage">距離目的地還有 XXX 公尺，請準備下車！</p>
+      <div class="space-y-3">
+        <button onclick="dismissAlert()"
+                class="w-full py-4 rounded-2xl text-white font-black text-base transition-all active:scale-95"
+                style="background:linear-gradient(135deg,#A8D5BA,#7EBFA0);box-shadow:0 4px 16px rgba(168,213,186,.5)">
           ✅ 我已醒來，停止提醒
         </button>
-        <button class="btn btn-outline btn-large" id="btnContinue" onclick="continueMonitoring()">
+        <button id="btnContinue" onclick="continueMonitoring()"
+                class="w-full py-4 rounded-2xl font-bold text-sm border-2 border-gray-200 text-muted transition-all active:scale-95">
           🔄 繼續監聽（加強模式）
         </button>
       </div>
@@ -301,5 +670,15 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- 主程式 -->
   <script src="app.js"></script>
+
+  <script>
+    // details 箭頭動畫
+    document.querySelectorAll('details').forEach(d => {
+      d.addEventListener('toggle', () => {
+        const arrow = d.querySelector('.details-arrow');
+        if (arrow) arrow.textContent = d.open ? '▲' : '▼';
+      });
+    });
+  </script>
 </body>
 </html>

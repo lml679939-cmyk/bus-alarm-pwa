@@ -902,11 +902,11 @@ async function refreshHeadphoneStatus() {
   const textEl     = document.getElementById('headphoneStatusText');
 
   if (!State.headphoneMode) {
-    statusDiv.style.display = 'none';
+    statusDiv.classList.add('hidden'); statusDiv.style.display = 'none';
     return;
   }
 
-  statusDiv.style.display = 'flex';
+  statusDiv.classList.remove('hidden'); statusDiv.style.display = 'flex';
   textEl.textContent = '偵測中…';
 
   const connected = await detectHeadphones();
@@ -992,27 +992,32 @@ function onNotificationToggle() {
 /* ============================================================
    Wake Lock API
    ============================================================ */
+function setWakeLockWarning(show) {
+  const el = document.getElementById('wakeLockWarning');
+  if (!el) return;
+  if (show) { el.classList.remove('hidden'); el.style.display = 'block'; }
+  else      { el.classList.add('hidden');    el.style.display = 'none';  }
+}
+
 async function requestWakeLock() {
   if (!('wakeLock' in navigator)) {
-    document.getElementById('wakeLockWarning').style.display = 'block'; return;
+    setWakeLockWarning(true); return;
   }
   try {
     State.wakeLock = await navigator.wakeLock.request('screen');
-    State.wakeLock.addEventListener('release', () => {
-      document.getElementById('wakeLockWarning').style.display = 'block';
-    });
+    State.wakeLock.addEventListener('release', () => setWakeLockWarning(true));
     document.addEventListener('visibilitychange', onVisibilityChange);
-    document.getElementById('wakeLockWarning').style.display = 'none';
+    setWakeLockWarning(false);
   } catch (e) {
     console.warn('Wake Lock 失敗：', e);
-    document.getElementById('wakeLockWarning').style.display = 'block';
+    setWakeLockWarning(true);
   }
 }
 
 function releaseWakeLock() {
   if (State.wakeLock) { State.wakeLock.release(); State.wakeLock = null; }
   document.removeEventListener('visibilitychange', onVisibilityChange);
-  document.getElementById('wakeLockWarning').style.display = 'none';
+  setWakeLockWarning(false);
 }
 
 async function onVisibilityChange() {
@@ -1323,14 +1328,23 @@ function setRadius(r) {
 
 function updatePresetButtons() {
   document.querySelectorAll('.preset-btn').forEach(btn => {
-    btn.classList.toggle('active', parseInt(btn.dataset.r, 10) === State.radius);
+    const isActive = parseInt(btn.dataset.r, 10) === State.radius;
+    if (isActive) {
+      btn.style.borderColor = '#F5A623';
+      btn.style.background  = '#FFF3D6';
+      btn.style.color       = '#c07c00';
+    } else {
+      btn.style.borderColor = '';
+      btn.style.background  = '';
+      btn.style.color       = '';
+    }
   });
 }
 
 function updateSliderGradient() {
-  const s = document.getElementById('radiusSlider');
+  const s   = document.getElementById('radiusSlider');
   const pct = ((State.radius - 200) / 600) * 100;
-  s.style.background = `linear-gradient(to right,#1565c0 ${pct}%,var(--border) ${pct}%)`;
+  s.style.background = `linear-gradient(to right,#F5A623 ${pct}%,#E8E2D8 ${pct}%)`;
 }
 
 /* ============================================================
@@ -1346,8 +1360,13 @@ function updateAllUI() {
 function updateDestUI() {
   const box    = document.getElementById('destInfoBox');
   const noInfo = !State.destination;
-  box.style.display = noInfo ? 'none' : 'flex';
-  if (!noInfo) {
+  // 新 HTML 用 Tailwind hidden class；兼容舊版 style.display
+  if (noInfo) {
+    box.classList.add('hidden');
+    box.style.display = 'none';
+  } else {
+    box.classList.remove('hidden');
+    box.style.display = 'flex';
     const shortName = State.destination.name.length > 50
       ? State.destination.name.substring(0, 50) + '…'
       : State.destination.name;
@@ -1388,8 +1407,18 @@ function updateMonitoringButtons() {
 function updateStatusBadge(status) {
   const badge  = document.getElementById('statusBadge');
   const labels = { idle:'待機中', monitoring:'監聽中 ●', nearby:'已接近 ⚡', triggered:'已觸發 🔔' };
-  badge.dataset.status = status;
-  badge.textContent    = labels[status] || '待機中';
+  const styles = {
+    idle:      { bg:'rgba(245,166,35,.15)', border:'#F5A623',  color:'#c07c00' },
+    monitoring:{ bg:'rgba(168,213,186,.25)',border:'#A8D5BA',  color:'#2e7d32' },
+    nearby:    { bg:'rgba(255,152,0,.18)',  border:'#FFAB40',  color:'#e65100' },
+    triggered: { bg:'rgba(242,139,130,.2)',  border:'#F28B82', color:'#c62828' },
+  };
+  badge.dataset.status   = status;
+  badge.textContent      = labels[status] || '待機中';
+  const st = styles[status] || styles.idle;
+  badge.style.background   = st.bg;
+  badge.style.borderColor  = st.border;
+  badge.style.color        = st.color;
 }
 
 function updateDistanceUI(dist, acc) {

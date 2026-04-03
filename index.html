@@ -344,6 +344,44 @@
       <div class="text-xs text-muted/70 mt-1" id="accuracyLabel"></div>
     </div>
 
+    <!-- ===== 到站時間估算卡片（監聽中才顯示） ===== -->
+    <div id="etaCard" style="display:none"
+         class="rounded-3xl p-5 shadow-card"
+         style="background: linear-gradient(135deg,#E8F7EE 0%,#F0FAF4 100%)">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-8 h-8 rounded-full flex items-center justify-center text-base"
+              style="background:#A8D5BA33">⏱️</span>
+        <h2 class="font-bold text-base" style="color:#1b5e20">預估到站時間</h2>
+        <span class="ml-auto text-xs px-2 py-0.5 rounded-full font-semibold"
+              style="background:#A8D5BA;color:#fff">OSRM 道路估算</span>
+      </div>
+      <div class="text-center py-2">
+        <div id="etaValue" class="font-black" style="font-size:3rem;line-height:1;color:#2e7d32">--</div>
+        <div id="etaSub" class="text-xs mt-2" style="color:#4a7c59"></div>
+        <div id="etaRoadDist" class="text-xs mt-1" style="color:#718096"></div>
+      </div>
+      <!-- 公車速度調整 -->
+      <div class="mt-4 pt-4" style="border-top:1px solid #C8E6C9">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-semibold" style="color:#2e7d32">公車速度</span>
+          <span class="font-black text-base" style="color:#2e7d32">
+            <span id="busSpeedValue">20</span> km/h
+          </span>
+        </div>
+        <input type="range" id="busSpeedSlider"
+               min="10" max="50" step="5" value="20"
+               class="w-full"
+               oninput="onBusSpeedChange(this.value)"
+               style="-webkit-appearance:none;height:6px;border-radius:3px;outline:none;
+                      background:linear-gradient(to right,#A8D5BA 40%,#E8E2D8 40%)">
+        <div class="flex justify-between text-xs mt-1" style="color:#718096">
+          <span>市區慢速 10</span>
+          <span>一般 20-25</span>
+          <span>快速 50</span>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== 目前位置卡片 ===== -->
     <div class="bg-card rounded-3xl p-5 shadow-card">
       <div class="flex items-center gap-2 mb-3">

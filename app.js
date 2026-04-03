@@ -36,6 +36,10 @@ const State = {
   volume:              80,        // 主音量 0~100
   soundLoop:           null,      // 警報音效循環 timer
   masterGain:          null,      // Web Audio 主音量 GainNode
+  etaMinutes:          null,      // 最新估算到站分鐘數
+  etaRoadDist:         null,      // OSRM 回傳的道路距離（公尺）
+  etaLastFetch:        0,         // 上次呼叫 OSRM 的時間戳
+  busSpeedKmh:         20,        // 假設公車速度（km/h），使用者可調
 };
 
 /* ---- 震動 Pattern ---- */
@@ -507,10 +511,14 @@ function stopMonitoring() {
   hideIosBackgroundBanner();
   updateAllUI();
 
-  // 重置距離卡片
+  // 重置距離卡片與 ETA
   document.getElementById('distanceValue').textContent = '--';
   document.getElementById('distanceLabel').textContent = '距目的地';
   document.getElementById('distanceCard').dataset.status = 'idle';
+  State.etaMinutes   = null;
+  State.etaRoadDist  = null;
+  State.etaLastFetch = 0;
+  updateEtaUI(null);
   showToast('⏹ 已停止監聽');
 }
 
@@ -527,6 +535,13 @@ function onPositionUpdate(pos) {
   const dist = haversineDistance(lat, lng, State.destination.lat, State.destination.lng);
   updateDistanceUI(dist, acc);
   checkAlert(dist);
+
+  // 每 30 秒或首次更新時重新呼叫 OSRM 估算到站時間
+  const now = Date.now();
+  if (now - State.etaLastFetch > 30000) {
+    State.etaLastFetch = now;
+    fetchOsrmEta(lat, lng, State.destination.lat, State.destination.lng);
+  }
 }
 
 function onPositionError(err) {
@@ -544,6 +559,108 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat/2)**2
     + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+/* ============================================================
+   OSRM 路徑估算（方案A：免費公開 API，不需要 API Key）
+   - 呼叫 router.project-osrm.org 取得實際道路距離
+   - 以使用者設定的公車速度換算到站分鐘數
+   ============================================================ */
+async function fetchOsrmEta(fromLat, fromLng, toLat, toLng) {
+  try {
+    updateEtaUI('loading');
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=false`;
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`OSRM 回應 ${res.status}`);
+    const data = await res.json();
+
+    if (data.code !== 'Ok' || !data.routes?.length) {
+      throw new Error('OSRM 無法規劃路徑');
+    }
+
+    const roadDist = data.routes[0].distance;  // 公尺
+    const speedMs  = (State.busSpeedKmh * 1000) / 3600;  // 換算成 m/s
+    const etaSec   = roadDist / speedMs;
+    const etaMin   = Math.ceil(etaSec / 60);
+
+    State.etaRoadDist = roadDist;
+    State.etaMinutes  = etaMin;
+    updateEtaUI(etaMin, roadDist);
+  } catch (e) {
+    console.warn('OSRM 估算失敗：', e);
+    // 失敗時改用直線距離粗估
+    if (State.currentLoc && State.destination) {
+      const lineDist = haversineDistance(
+        State.currentLoc.lat, State.currentLoc.lng,
+        State.destination.lat, State.destination.lng
+      );
+      const approxDist = lineDist * 1.3;  // 直線×1.3 估算實際道路距離
+      const speedMs    = (State.busSpeedKmh * 1000) / 3600;
+      const etaMin     = Math.ceil(approxDist / speedMs / 60);
+      State.etaMinutes = etaMin;
+      updateEtaUI(etaMin, null);
+    } else {
+      updateEtaUI(null);
+    }
+  }
+}
+
+/** 更新 ETA 區塊 UI */
+function updateEtaUI(etaMinOrState, roadDistM) {
+  const card    = document.getElementById('etaCard');
+  const valEl   = document.getElementById('etaValue');
+  const subEl   = document.getElementById('etaSub');
+  const roadEl  = document.getElementById('etaRoadDist');
+  if (!card) return;
+
+  if (etaMinOrState === null) {
+    // 未啟動／已停止
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+
+  if (etaMinOrState === 'loading') {
+    valEl.textContent = '計算中…';
+    subEl.textContent = '';
+    roadEl.textContent = '';
+    return;
+  }
+
+  const min = etaMinOrState;
+  if (min < 2) {
+    valEl.textContent = '快到了！';
+    valEl.style.color = '#c62828';
+  } else if (min < 5) {
+    valEl.textContent = `約 ${min} 分鐘`;
+    valEl.style.color = '#e65100';
+  } else {
+    valEl.textContent = `約 ${min} 分鐘`;
+    valEl.style.color = '#2e7d32';
+  }
+
+  subEl.textContent = `公車速度設定：${State.busSpeedKmh} km/h`;
+  if (roadDistM) {
+    roadEl.textContent = `道路距離：${(roadDistM / 1000).toFixed(1)} 公里`;
+  } else {
+    roadEl.textContent = '（以直線距離×1.3 估算）';
+  }
+}
+
+/** 使用者調整公車速度 */
+function onBusSpeedChange(val) {
+  State.busSpeedKmh = parseInt(val, 10);
+  document.getElementById('busSpeedValue').textContent = val;
+  saveSettings();
+  // 立即重算（不重新呼叫 OSRM，直接用現有道路距離）
+  if (State.etaRoadDist) {
+    const speedMs = (State.busSpeedKmh * 1000) / 3600;
+    State.etaMinutes = Math.ceil(State.etaRoadDist / speedMs / 60);
+    updateEtaUI(State.etaMinutes, State.etaRoadDist);
+  } else if (State.etaMinutes) {
+    // 觸發重新呼叫
+    State.etaLastFetch = 0;
+  }
 }
 
 /* ============================================================
@@ -1259,6 +1376,7 @@ function saveSettings() {
     chkVibrate:       document.getElementById('chkVibrate')?.checked,
     chkSound:         document.getElementById('chkSound')?.checked,
     chkNotification:  document.getElementById('chkNotification')?.checked,
+    busSpeedKmh:      State.busSpeedKmh,
   }));
 }
 
@@ -1272,7 +1390,8 @@ function loadSettings() {
     if (d.radius)        State.radius        = d.radius;
     if (d.selectedSound) State.selectedSound = d.selectedSound;
     if (d.headphoneMode) State.headphoneMode = d.headphoneMode;
-    if (d.volume !== undefined) State.volume = d.volume;
+    if (d.volume !== undefined)      State.volume      = d.volume;
+    if (d.busSpeedKmh !== undefined) State.busSpeedKmh = d.busSpeedKmh;
 
     requestAnimationFrame(() => {
       // 一般 Toggles
@@ -1295,8 +1414,14 @@ function loadSettings() {
       // 還原音量滑桿
       const volSlider = document.getElementById('volumeSlider');
       const volValue  = document.getElementById('volumeValue');
-      if (volSlider) volSlider.value         = State.volume;
-      if (volValue)  volValue.textContent    = State.volume;
+      if (volSlider) volSlider.value      = State.volume;
+      if (volValue)  volValue.textContent = State.volume;
+
+      // 還原公車速度滑桿
+      const speedSlider = document.getElementById('busSpeedSlider');
+      const speedValue  = document.getElementById('busSpeedValue');
+      if (speedSlider) speedSlider.value      = State.busSpeedKmh;
+      if (speedValue)  speedValue.textContent = State.busSpeedKmh;
 
       // 初始化耳機狀態顯示
       if (State.headphoneMode) refreshHeadphoneStatus();

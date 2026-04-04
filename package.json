@@ -1,0 +1,8 @@
+{
+  "name": "bus-alarm-pwa",
+  "version": "1.0.0",
+  "description": "公車到站 GPS 提醒 PWA",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}

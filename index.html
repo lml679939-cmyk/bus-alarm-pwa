@@ -538,6 +538,22 @@
             <span class="toggle-track"></span>
           </div>
         </label>
+
+        <!-- iOS Web Push 狀態 -->
+        <div class="mt-3 p-3 rounded-2xl" style="background:#F2ECF9">
+          <p class="text-xs font-bold mb-1" style="color:#7b3fa0">🍎 iOS 背景提醒（Web Push）</p>
+          <p class="text-xs mb-2" style="color:#555">
+            螢幕關閉或切換到其他 App 時，透過伺服器推播通知喚醒螢幕。<br>
+            需先將此網頁<strong>加入主畫面</strong>（iOS 16.4+）。
+          </p>
+          <span id="pushStatusBadge"
+                class="text-xs font-semibold px-3 py-1 rounded-full"
+                style="display:none">
+          </span>
+          <p class="text-xs mt-2" style="color:#999">
+            尚未設定 Vercel 後端時此功能不會啟用。
+          </p>
+        </div>
       </div>
     </div>
 

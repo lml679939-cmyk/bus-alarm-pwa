@@ -11,6 +11,15 @@
 'use strict';
 
 /* ============================================================
+   Web Push 設定（部署到 Vercel 後填入）
+   STEP 1: 執行 npx web-push generate-vapid-keys 取得金鑰
+   STEP 2: 將 PUBLIC KEY 填入下方
+   STEP 3: 將 Vercel 部署網址填入 PUSH_API_URL
+   ============================================================ */
+const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY';   // ← 部署後替換
+const PUSH_API_URL     = 'YOUR_VERCEL_URL/api/notify'; // ← 部署後替換
+
+/* ============================================================
    全域狀態
    ============================================================ */
 const State = {
@@ -36,6 +45,7 @@ const State = {
   volume:              80,        // 主音量 0~100
   soundLoop:           null,      // 警報音效循環 timer
   masterGain:          null,      // Web Audio 主音量 GainNode
+  pushSubscription:    null,      // Web Push 訂閱物件
   etaMinutes:          null,      // 最新估算到站分鐘數
   etaRoadDist:         null,      // OSRM 回傳的道路距離（公尺）
   etaLastFetch:        0,         // 上次呼叫 OSRM 的時間戳
@@ -74,6 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAllUI();
   registerServiceWorker();
   requestNotificationPermission();
+  // Web Push 訂閱（需要通知權限，延遲 3s 等待權限請求完成）
+  setTimeout(initWebPush, 3000);
 });
 
 /* ============================================================
@@ -711,6 +723,12 @@ function triggerScreenWake(distM) {
   // 3. 短震動提示（Android 支援時）
   safeVibrate([300, 100, 300]);
 
+  // 4. Web Push → iOS 鎖定畫面也能亮屏提醒
+  sendWebPush(
+    '🚌 快到站了！請準備下車',
+    `距離目的地還有約 ${distM} 公尺，請注意！`
+  );
+
   showToast('📳 距目的地 500m，請準備下車！');
 }
 
@@ -732,6 +750,11 @@ function triggerAlert(phase, dist) {
     playAlertSound(phase, false, true);
   }
   if (document.getElementById('chkNotification').checked) sendNotification(phase, distText);
+
+  // Web Push（確保 iOS 背景也能收到）
+  const urgentText = isUrgent ? '🚨 快到站！趕快醒來！' : '🎯 快到目的地了！';
+  sendWebPush(urgentText, `距離目的地僅剩約 ${distText} 公尺，請準備下車！`);
+
   showAlertOverlay(phase, distText);
   updateStatusBadge('triggered');
   updateDistanceCardStatus('triggered');
@@ -1162,6 +1185,87 @@ async function requestNotificationPermission() {
       if (p === 'granted') showToast('✅ 通知權限已開啟');
     }, 2000);
   }
+}
+
+/* ============================================================
+   Web Push 訂閱 / 發送
+   ============================================================ */
+
+/** Base64URL → Uint8Array（Web Push applicationServerKey 格式轉換） */
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+/** 訂閱 Web Push（頁面載入時自動呼叫，有權限才執行） */
+async function initWebPush() {
+  // 尚未設定 VAPID 或 API URL → 靜默跳過
+  if (VAPID_PUBLIC_KEY === 'YOUR_VAPID_PUBLIC_KEY' || PUSH_API_URL.startsWith('YOUR_')) return;
+  if (!('PushManager' in window)) return;
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub   = await reg.pushManager.getSubscription();
+
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly:      true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+
+    State.pushSubscription = sub;
+    updatePushStatusUI('subscribed');
+  } catch (err) {
+    console.warn('Web Push 訂閱失敗：', err);
+    updatePushStatusUI('failed');
+  }
+}
+
+/**
+ * 透過 Vercel 後端發送 Web Push 通知
+ * @param {string} title
+ * @param {string} body
+ */
+async function sendWebPush(title, body) {
+  if (!State.pushSubscription) return;
+  if (PUSH_API_URL.startsWith('YOUR_')) return;
+
+  try {
+    const res = await fetch(PUSH_API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ subscription: State.pushSubscription, title, body }),
+    });
+    if (res.status === 410) {
+      // Subscription 已過期，清除後重新訂閱
+      await State.pushSubscription.unsubscribe();
+      State.pushSubscription = null;
+      updatePushStatusUI('expired');
+      initWebPush();
+    }
+  } catch (err) {
+    console.warn('Web Push 發送失敗（網路問題）：', err);
+  }
+}
+
+/** 更新 Push 訂閱狀態 UI */
+function updatePushStatusUI(status) {
+  const el = document.getElementById('pushStatusBadge');
+  if (!el) return;
+  const map = {
+    subscribed: { text: '✅ iOS Push 已啟用',  bg: '#E8F7EE', color: '#2e7d32' },
+    failed:     { text: '❌ Push 訂閱失敗',     bg: '#FDECEA', color: '#c62828' },
+    expired:    { text: '🔄 Push 重新訂閱中…', bg: '#FFF3D6', color: '#e65100' },
+    unsupported:{ text: '⚠️ 裝置不支援 Push',  bg: '#F2ECF9', color: '#7b3fa0' },
+  };
+  const cfg = map[status] ?? map.failed;
+  el.textContent         = cfg.text;
+  el.style.background    = cfg.bg;
+  el.style.color         = cfg.color;
+  el.style.display       = 'inline-block';
 }
 
 function onNotificationToggle() {

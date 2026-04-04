@@ -11,7 +11,7 @@
 'use strict';
 
 /* ---- 版本號：每次更新靜態資源時遞增，觸發快取更新 ---- */
-const CACHE_VERSION   = 'v2.3.0';
+const CACHE_VERSION   = 'v2.4.0';
 const CACHE_STATIC    = `bus-alarm-static-${CACHE_VERSION}`;
 const CACHE_CDN       = `bus-alarm-cdn-${CACHE_VERSION}`;
 const CACHE_TILES     = 'bus-alarm-tiles';   // 地圖圖磚（不帶版本，長期共用）
@@ -196,14 +196,18 @@ const EMPTY_PNG =
    ============================================================ */
 self.addEventListener('push', event => {
   if (!event.data) return;
-  const data = event.data.json();
+  let data = {};
+  try { data = event.data.json(); } catch (_) { data = { title: '公車到站提醒', body: event.data.text() }; }
+
   event.waitUntil(
-    self.registration.showNotification(data.title || '公車到站提醒', {
-      body:  data.body  || '快到站了！',
-      icon:  './icons/icon-192.png',
-      badge: './icons/icon-192.png',
-      tag:   'bus-alarm-push',
-      renotify: true,
+    self.registration.showNotification(data.title || '🚌 公車快到站了！', {
+      body:               data.body  || '請準備下車！',
+      icon:               './icons/icon-192.png',
+      badge:              './icons/icon-192.png',
+      tag:                'bus-alarm-push',
+      renotify:           true,
+      requireInteraction: true,          // 通知持續顯示不自動消失
+      vibrate:            [400, 100, 400, 100, 600],
     })
   );
 });

@@ -496,16 +496,26 @@
 
       <div class="space-y-1">
         <!-- 震動 -->
-        <label class="flex items-center justify-between py-3 border-b border-gray-100 cursor-pointer">
-          <div class="flex items-center gap-3">
-            <span class="text-xl">📳</span>
-            <span class="text-sm font-semibold text-dark">震動提醒</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <input type="checkbox" id="chkVibrate" checked onchange="saveSettings()">
-            <span class="toggle-track"></span>
-          </div>
-        </label>
+        <div class="py-3 border-b border-gray-100">
+          <label class="flex items-center justify-between cursor-pointer">
+            <div class="flex items-center gap-3">
+              <span class="text-xl">📳</span>
+              <div>
+                <span class="text-sm font-semibold text-dark">震動提醒</span>
+                <p class="text-xs text-muted/70 mt-0.5">iOS 裝置不支援此功能</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="chkVibrate" checked onchange="saveSettings()">
+              <span class="toggle-track"></span>
+            </div>
+          </label>
+          <button onclick="testVibrate()"
+                  class="mt-2 w-full text-xs font-semibold py-2 rounded-xl border-2 transition-all active:scale-95"
+                  style="border-color:#C4A8D5;color:#7b3fa0;background:#F2ECF9">
+            📳 測試震動是否正常
+          </button>
+        </div>
         <!-- 聲音 -->
         <label class="flex items-center justify-between py-3 border-b border-gray-100 cursor-pointer">
           <div class="flex items-center gap-3">

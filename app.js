@@ -40,6 +40,7 @@ const State = {
   etaRoadDist:         null,      // OSRM 回傳的道路距離（公尺）
   etaLastFetch:        0,         // 上次呼叫 OSRM 的時間戳
   busSpeedKmh:         20,        // 假設公車速度（km/h），使用者可調
+  screenWakeTriggered: false,     // 500m 螢幕喚醒是否已觸發（避免重複）
 };
 
 /* ---- 震動 Pattern ---- */
@@ -515,9 +516,10 @@ function stopMonitoring() {
   document.getElementById('distanceValue').textContent = '--';
   document.getElementById('distanceLabel').textContent = '距目的地';
   document.getElementById('distanceCard').dataset.status = 'idle';
-  State.etaMinutes   = null;
-  State.etaRoadDist  = null;
-  State.etaLastFetch = 0;
+  State.etaMinutes         = null;
+  State.etaRoadDist        = null;
+  State.etaLastFetch       = 0;
+  State.screenWakeTriggered = false;
   updateEtaUI(null);
   showToast('⏹ 已停止監聽');
 }
@@ -668,12 +670,48 @@ function onBusSpeedChange(val) {
    ============================================================ */
 function checkAlert(dist) {
   if (!State.isMonitoring) return;
+
+  // 第2段：200m 加強警報
   if (State.alertPhase === 1 && dist <= State.INNER_RADIUS) {
     triggerAlert(2, dist); return;
   }
+  // 第1段：使用者設定半徑
   if (State.alertPhase === 0 && dist <= State.radius) {
-    triggerAlert(1, dist);
+    triggerAlert(1, dist); return;
   }
+  // 預備段：500m 螢幕喚醒（只觸發一次，不顯示警報 UI）
+  if (!State.screenWakeTriggered && dist <= 500) {
+    State.screenWakeTriggered = true;
+    triggerScreenWake(Math.round(dist));
+  }
+}
+
+/**
+ * 500m 預備喚醒：喚醒螢幕 + 短震動，不顯示警報 UI
+ * 原理：重新申請 Wake Lock（讓螢幕保持亮著）+ 送通知（Android 會亮屏）
+ */
+function triggerScreenWake(distM) {
+  // 1. 重新申請 Wake Lock（如果螢幕還亮著，讓它繼續亮）
+  requestWakeLock();
+
+  // 2. 送系統通知（Android 螢幕鎖定時會亮屏顯示通知）
+  if (Notification.permission === 'granted') {
+    try {
+      new Notification('🚌 快到站了！請準備下車', {
+        body: `距離目的地還有約 ${distM} 公尺，請注意！`,
+        icon: 'icons/icon-192.png',
+        tag: 'bus-screen-wake',
+        renotify: true,
+        requireInteraction: false,
+        silent: false,
+      });
+    } catch (e) { console.warn('螢幕喚醒通知失敗：', e); }
+  }
+
+  // 3. 短震動提示（Android 支援時）
+  safeVibrate([300, 100, 300]);
+
+  showToast('📳 距目的地 500m，請準備下車！');
 }
 
 function triggerAlert(phase, dist) {
@@ -681,13 +719,16 @@ function triggerAlert(phase, dist) {
   const distText = Math.round(dist);
   const isUrgent = phase === 2;
 
-  if (document.getElementById('chkVibrate').checked && 'vibrate' in navigator) {
+  // 重新申請 Wake Lock，確保螢幕亮起
+  requestWakeLock();
+
+  if (document.getElementById('chkVibrate').checked) {
     const pattern = isUrgent ? VIBRATE_P2 : VIBRATE_P1;
-    navigator.vibrate(pattern);
+    safeVibrate(pattern);
     startVibrateLoop(pattern);
   }
   if (document.getElementById('chkSound').checked) {
-    stopSoundLoop(); // 先停止前一段的循環（如果有）
+    stopSoundLoop();
     playAlertSound(phase, false, true);
   }
   if (document.getElementById('chkNotification').checked) sendNotification(phase, distText);
@@ -696,11 +737,39 @@ function triggerAlert(phase, dist) {
   updateDistanceCardStatus('triggered');
 }
 
+/**
+ * 安全震動：處理各平台差異
+ * - iOS Safari：完全不支援，顯示提示
+ * - Android：呼叫 navigator.vibrate
+ * - 頁面在背景時 vibrate 可能被系統封鎖，此為已知限制
+ */
+function safeVibrate(pattern) {
+  if (!('vibrate' in navigator)) {
+    // iOS 或不支援的平台：靜默失敗，不影響其他功能
+    return;
+  }
+  try {
+    navigator.vibrate(pattern);
+  } catch (e) {
+    console.warn('震動失敗：', e);
+  }
+}
+
+/** 測試震動（讓使用者確認裝置支援） */
+function testVibrate() {
+  if (!('vibrate' in navigator)) {
+    showToast('⚠️ 您的裝置不支援震動（iOS 不支援此功能）');
+    return;
+  }
+  navigator.vibrate([200, 100, 200, 100, 400]);
+  showToast('📳 震動測試中…感受到震動即代表正常');
+}
+
 function startVibrateLoop(pattern) {
   stopVibrateLoop();
   const delay = pattern.reduce((a, b) => a + b, 0) + 1000;
   State.vibrateLoop = setInterval(() => {
-    if ('vibrate' in navigator) navigator.vibrate(pattern);
+    safeVibrate(pattern);
   }, delay);
 }
 

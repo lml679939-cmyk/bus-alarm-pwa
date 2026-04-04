@@ -16,8 +16,8 @@
    STEP 2: 將 PUBLIC KEY 填入下方
    STEP 3: 將 Vercel 部署網址填入 PUSH_API_URL
    ============================================================ */
-const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY';   // ← 部署後替換
-const PUSH_API_URL     = 'YOUR_VERCEL_URL/api/notify'; // ← 部署後替換
+const VAPID_PUBLIC_KEY = 'BEG51OWRlSPYAmzkUs7Rg5oQmUvISgK4EtHwtpxdFMdYdGIssaBOeCQGPIGzbJHxPtMFOGslABC-L-1ioUm_hVs';
+const PUSH_API_URL     = 'https://bus-alarm-pwa.vercel.app/api/notify';
 
 /* ============================================================
    全域狀態

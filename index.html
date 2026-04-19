@@ -3,37 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#F5A623">
+  <meta name="theme-color" content="#EDEAE3">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="公車到站提醒">
   <title>公車到站提醒</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            cream:   '#FAF8F4',
-            card:    '#FFFFFF',
-            warm:    '#F5A623',
-            'warm-light': '#FFF3D6',
-            mint:    '#A8D5BA',
-            'mint-light': '#E8F7EE',
-            lavender:'#C4A8D5',
-            'lav-light': '#F2ECF9',
-            coral:   '#F28B82',
-            'coral-light': '#FDECEA',
-            sage:    '#8FAF7E',
-            muted:   '#9B9080',
-            dark:    '#3D3530',
+            canvas:   '#EDEAE3',
+            card:     '#FFFFFF',
+            sunshine: '#F5C543',
+            'sunshine-soft': '#FBE6A1',
+            butter:   '#FFE08A',
+            sand:     '#F5ECD5',
+            forest:   '#7A9A5C',
+            clay:     '#8B5A3C',
+            blush:    '#F7D7D1',
+            lilac:    '#E3DBF1',
+            slate:    '#2E2A26',
+            muted:    '#857F75',
+            hairline: '#E2DCD0',
           },
           fontFamily: {
             sans: ['-apple-system','BlinkMacSystemFont','Noto Sans TC','PingFang TC','sans-serif'],
@@ -43,10 +39,8 @@
             '5xl': '2.5rem',
           },
           boxShadow: {
-            'card': '0 2px 16px rgba(61,53,48,0.07)',
-            'card-hover': '0 6px 24px rgba(61,53,48,0.12)',
-            'warm': '0 4px 20px rgba(245,166,35,0.35)',
-            'coral': '0 4px 20px rgba(242,139,130,0.35)',
+            'card': '0 1px 2px rgba(46,42,38,0.04), 0 4px 16px rgba(46,42,38,0.05)',
+            'hero': '0 10px 28px rgba(245,197,67,0.28)',
           }
         }
       }
@@ -54,155 +48,149 @@
   </script>
 
   <style>
-    /* === 全域基礎 === */
     * { -webkit-tap-highlight-color: transparent; }
-    body { background-color: #FAF8F4; overscroll-behavior: none; touch-action: pan-y; }
+    html, body { background: #EDEAE3; }
+    body {
+      overscroll-behavior: none; touch-action: pan-y;
+      font-family: -apple-system,BlinkMacSystemFont,'Noto Sans TC','PingFang TC',sans-serif;
+      color: #2E2A26;
+    }
     button, a, input, select, label, [role="button"] { touch-action: manipulation; }
 
-    /* === 地圖容器 === */
-    #map {
-      width: 100%;
-      height: 220px;
-      border-radius: 1.25rem;
-      overflow: hidden;
-      position: relative;
+    /* === 週日期條 === */
+    .day-strip { display: grid; grid-template-columns: repeat(7,1fr); gap: 6px; }
+    .day-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
+    .day-label { font-size: 12px; font-weight: 500; color: #857F75; letter-spacing: .3px; }
+    .day-circle {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: #FFFFFF; color: #2E2A26;
+      font-size: 15px; font-weight: 700;
+      box-shadow: 0 1px 3px rgba(46,42,38,.06);
+      transition: all .2s;
+    }
+    .day-cell.active .day-label { color: #2E2A26; font-weight: 700; }
+    .day-cell.active .day-circle {
+      background: #F5C543; color: #2E2A26;
+      box-shadow: 0 4px 14px rgba(245,197,67,.5);
+      transform: scale(1.06);
     }
 
-    /* === 監聽中地圖脈衝邊框 === */
-    #map.monitoring {
-      outline: 3px solid #F5A623;
-      outline-offset: -3px;
-      animation: map-pulse 2s infinite;
-    }
+    /* === 地圖 === */
+    #map { width: 100%; height: 220px; border-radius: 1.5rem; overflow: hidden; position: relative; }
+    #map.monitoring { outline: 3px solid #F5C543; outline-offset: -3px; animation: map-pulse 2s infinite; }
     @keyframes map-pulse {
-      0%,100% { outline-color: rgba(245,166,35,.9); }
-      50%      { outline-color: rgba(245,166,35,.2); }
+      0%,100% { outline-color: rgba(245,197,67,.95); }
+      50%     { outline-color: rgba(245,197,67,.2); }
     }
 
-    /* === 距離大數字 === */
+    /* === 巨大距離數字 === */
     .distance-number {
-      font-size: 4.5rem;
-      font-weight: 900;
-      line-height: 1;
-      font-variant-numeric: tabular-nums;
+      font-size: 5.5rem; font-weight: 900; line-height: .95;
+      letter-spacing: -3px; font-variant-numeric: tabular-nums; color: #2E2A26;
       transition: color .3s;
     }
-
-    /* === 音效按鈕格線 === */
-    .sound-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; }
+    #distanceCard[data-status="nearby"]    .distance-number { color: #C27B00; }
+    #distanceCard[data-status="triggered"] .distance-number { color: #C63C3C; }
+    #distanceCard[data-status="nearby"]    { background: linear-gradient(145deg,#FFF0B8,#F5C543) !important; }
+    #distanceCard[data-status="triggered"] { background: linear-gradient(145deg,#F7D7D1,#F29A90) !important; animation: card-shake .3s ease 3; }
+    @keyframes card-shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
 
     /* === 音效按鈕 === */
+    .sound-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; }
     .sound-btn {
-      display: flex; flex-direction: column; align-items: center;
-      gap: 4px; padding: 10px 4px;
-      border-radius: 14px; border: 2px solid #E8E2D8;
-      background: #FAF8F4; cursor: pointer;
-      transition: all .18s;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 14px 4px 10px; border-radius: 20px;
+      border: 2px solid transparent; background: #F5ECD5;
+      cursor: pointer; transition: all .18s;
     }
     .sound-btn.active {
-      border-color: #F5A623; background: #FFF3D6;
-      box-shadow: 0 0 0 3px rgba(245,166,35,.18);
+      border-color: #F5C543; background: #FFF0B8;
+      box-shadow: 0 0 0 3px rgba(245,197,67,.2);
     }
     .sound-btn:active { transform: scale(.93); }
+    .sound-btn .icon-label { font-size: 11px; font-weight: 700; color: #5d554c; text-align: center; line-height: 1.2; }
+    .sound-btn.active .icon-label { color: #8B5E00; }
 
-    /* === Toggle 開關 === */
+    /* === Toggle === */
     .toggle-track {
       position: relative; width: 48px; height: 28px;
-      background: #D5CFC5; border-radius: 14px;
-      transition: background .2s; cursor: pointer;
-      flex-shrink: 0;
+      background: #D8D2C6; border-radius: 14px;
+      transition: background .2s; cursor: pointer; flex-shrink: 0;
     }
     .toggle-track::after {
-      content: ''; position: absolute;
-      top: 3px; left: 3px;
-      width: 22px; height: 22px;
-      border-radius: 50%; background: #fff;
-      box-shadow: 0 1px 4px rgba(0,0,0,.2);
-      transition: transform .2s;
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 22px; height: 22px; border-radius: 50%; background: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: transform .2s;
     }
-    input[type="checkbox"]:checked + .toggle-track { background: #F5A623; }
+    input[type="checkbox"]:checked + .toggle-track { background: #F5C543; }
     input[type="checkbox"]:checked + .toggle-track::after { transform: translateX(20px); }
     input[type="checkbox"] { display: none; }
 
-    /* === 半徑滑桿 === */
+    /* === 滑桿 === */
     #radiusSlider {
       -webkit-appearance: none; height: 6px; border-radius: 3px; outline: none;
-      background: linear-gradient(to right, #F5A623 50%, #E8E2D8 50%);
+      background: linear-gradient(to right,#F5C543 50%,#E2DCD0 50%);
     }
     #radiusSlider::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 26px; height: 26px;
-      border-radius: 50%; background: #F5A623;
-      box-shadow: 0 2px 8px rgba(245,166,35,.5); cursor: pointer;
+      -webkit-appearance: none; width: 28px; height: 28px; border-radius: 50%;
+      background: #F5C543; box-shadow: 0 2px 8px rgba(245,197,67,.5); cursor: pointer;
     }
-
-    /* === 音量滑桿 === */
     #volumeSlider {
       -webkit-appearance: none; height: 5px; border-radius: 3px; outline: none;
-      background: linear-gradient(to right, #C4A8D5 80%, #E8E2D8 80%);
+      background: linear-gradient(to right,#7A9A5C 80%,#E2DCD0 80%);
     }
     #volumeSlider::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 22px; height: 22px;
-      border-radius: 50%; background: #C4A8D5;
-      box-shadow: 0 2px 6px rgba(196,168,213,.5); cursor: pointer;
+      -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+      background: #7A9A5C; box-shadow: 0 2px 6px rgba(122,154,92,.5); cursor: pointer;
     }
 
-    /* === 搜尋結果列表 === */
+    /* === 搜尋結果 === */
     #searchResults:not(:empty) {
-      border: 1.5px solid #E8E2D8;
-      border-radius: 14px;
-      overflow: hidden;
-      margin-top: 8px;
-      background: #fff;
+      border: 1.5px solid #E2DCD0; border-radius: 18px;
+      overflow: hidden; margin-top: 8px; background: #fff;
     }
     .result-item {
       display: flex; align-items: center; gap: 10px;
-      padding: 11px 14px; border: none; border-bottom: 1px solid #F2EDE6;
-      background: transparent; width: 100%; text-align: left; cursor: pointer;
-      transition: background .15s;
+      padding: 12px 14px; border: none; border-bottom: 1px solid #F3EEE4;
+      background: transparent; width: 100%; text-align: left; cursor: pointer; transition: background .15s;
     }
     .result-item:last-child { border-bottom: none; }
-    .result-item:active { background: #FAF8F4; }
+    .result-item:active { background: #F5ECD5; }
 
-    /* === 地圖選點提示條 === */
+    /* === 地圖選點提示 === */
     #mapHintBar {
       position: absolute; bottom: 0; left: 0; right: 0;
-      background: rgba(245,166,35,.92);
-      color: #fff; display: flex; align-items: center;
-      justify-content: space-between;
-      padding: 10px 14px; font-size: 14px; font-weight: 600;
+      background: rgba(245,197,67,.95); color: #2E2A26;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; font-size: 14px; font-weight: 700;
       z-index: 500; backdrop-filter: blur(4px);
     }
 
     /* === 耳機狀態 === */
-    .headphone-status { border-radius: 10px; padding: 8px 12px; font-size: 13px; }
-    .headphone-status[data-state="ok"]      { background:#E8F7EE; color:#2e7d32; }
-    .headphone-status[data-state="warn"]    { background:#FDECEA; color:#c62828; }
-    .headphone-status[data-state="unknown"] { background:#FFF3D6; color:#e65100; }
+    .headphone-status { border-radius: 12px; padding: 8px 12px; font-size: 13px; }
+    .headphone-status[data-state="ok"]      { background:#E9F2E0; color:#4a6f2f; }
+    .headphone-status[data-state="warn"]    { background:#F7D7D1; color:#C63C3C; }
+    .headphone-status[data-state="unknown"] { background:#FBE6A1; color:#8B5E00; }
 
-    /* === GPS 狀態膠囊 === */
+    /* === GPS 膠囊 === */
     .gps-status-pill {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
     }
-    .gps-status-pill[data-status="ok"]    { background:#E8F7EE; color:#2e7d32; }
-    .gps-status-pill[data-status="retry"] { background:#FFF3D6; color:#e65100; animation: pulse-badge 1s infinite; }
-
-    /* === 狀態徽章動畫 === */
-    @keyframes pulse-badge {
-      0%,100%{ opacity:1; } 50%{ opacity:.5; }
-    }
+    .gps-status-pill[data-status="ok"]    { background:#E9F2E0; color:#4a6f2f; }
+    .gps-status-pill[data-status="retry"] { background:#FBE6A1; color:#8B5E00; animation: pulse-badge 1s infinite; }
+    @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.5} }
 
     /* === 警報 Overlay === */
     .alert-overlay {
-      position: fixed; inset: 0; background: rgba(61,53,48,.7);
-      z-index: 9999; display: flex; align-items: center;
-      justify-content: center; padding: 24px;
-      backdrop-filter: blur(8px);
-      animation: overlay-in .3s ease;
+      position: fixed; inset: 0; background: rgba(46,42,38,.75);
+      z-index: 9999; display: flex; align-items: center; justify-content: center;
+      padding: 24px; backdrop-filter: blur(8px); animation: overlay-in .3s ease;
     }
     @keyframes overlay-in { from{opacity:0} to{opacity:1} }
     .alert-box {
-      background: #fff; border-radius: 2rem; padding: 32px 24px;
+      background: #fff; border-radius: 2.5rem; padding: 36px 28px;
       width: 100%; max-width: 360px; text-align: center;
       animation: alert-pop .4s cubic-bezier(.175,.885,.32,1.275);
     }
@@ -212,9 +200,9 @@
 
     /* === Toast === */
     .toast {
-      position: fixed; bottom: calc(env(safe-area-inset-bottom) + 80px);
+      position: fixed; bottom: calc(env(safe-area-inset-bottom) + 120px);
       left: 50%; transform: translateX(-50%) translateY(20px);
-      background: rgba(61,53,48,.9); color: #fff;
+      background: rgba(46,42,38,.92); color: #fff;
       padding: 10px 20px; border-radius: 24px; font-size: 14px; font-weight: 500;
       white-space: normal; text-align: center; pointer-events: none;
       opacity: 0; transition: all .3s ease; z-index: 5000;
@@ -222,287 +210,434 @@
     }
     .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
-    /* === 大按鈕脈衝（監聽中） === */
-    #btnStop { animation: btn-pulse 2s infinite; }
-    @keyframes btn-pulse {
-      0%,100%{ box-shadow: 0 4px 20px rgba(242,139,130,.4); }
-      50%    { box-shadow: 0 4px 32px rgba(242,139,130,.7); }
-    }
-
-    /* === Source tag === */
-    .source-tag {
-      display: inline-block; font-size: 10px; font-weight: 700;
-      padding: 1px 6px; border-radius: 6px; margin-left: 4px; vertical-align: middle;
-    }
-    .source-tag.poi  { background:#FFF3D6; color:#c07c00; }
-    .source-tag.addr { background:#F2ECF9; color:#7b3fa0; }
-
     /* === 公車插圖動畫 === */
-    .bus-svg { animation: bus-ride 3s ease-in-out infinite alternate; }
+    .bus-scene { animation: bus-ride 3s ease-in-out infinite alternate; }
     @keyframes bus-ride {
-      from { transform: translateY(0px) rotate(-1deg); }
-      to   { transform: translateY(-5px) rotate(1deg); }
+      from { transform: translateY(0) rotate(-.8deg); }
+      to   { transform: translateY(-6px) rotate(.8deg); }
+    }
+    .sun-pulse { animation: sun-float 4s ease-in-out infinite alternate; }
+    @keyframes sun-float {
+      from { transform: translateY(0) scale(1); }
+      to   { transform: translateY(-4px) scale(1.04); }
     }
 
-    /* === 距離卡片狀態 === */
-    #distanceCard[data-status="nearby"]   { background: linear-gradient(135deg,#FFF3D6,#FFE5A0); }
-    #distanceCard[data-status="triggered"]{ background: linear-gradient(135deg,#FDECEA,#FFD0CB); animation: card-shake .3s ease 3; }
-    @keyframes card-shake {
-      0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)}
+    /* === 底部導航 === */
+    .bottom-nav {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: #FFFFFF;
+      border-top-left-radius: 32px; border-top-right-radius: 32px;
+      box-shadow: 0 -6px 24px rgba(46,42,38,.08);
+      padding: 8px 12px calc(env(safe-area-inset-bottom) + 6px);
+      z-index: 800;
+      display: grid; grid-template-columns: repeat(5,1fr); align-items: end;
+    }
+    .nav-item {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: none; border: none; cursor: pointer;
+      padding: 10px 0 4px; color: #C5BFBA; transition: color .2s;
+    }
+    .nav-item.active { color: #2E2A26; }
+    .nav-label { font-size: 11px; font-weight: 700; }
+    .nav-add {
+      background: #F5C543; color: #2E2A26;
+      width: 58px; height: 58px; border-radius: 50%;
+      margin: 0 auto -18px; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 8px 24px rgba(245,197,67,.5);
+      position: relative; top: -14px;
+      transition: transform .2s; border: none; cursor: pointer;
+    }
+    .nav-add:active { transform: scale(.92); }
+
+    /* === 頭像 === */
+    .avatar-badge {
+      width: 50px; height: 50px; border-radius: 50%;
+      background: linear-gradient(135deg,#F5C543,#FFCB3C);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 14px rgba(245,197,67,.4); flex-shrink: 0;
     }
 
-    /* === iOS 步驟卡 === */
-    .ios-step {
-      display: flex; align-items: flex-start; gap: 10px;
-      background: #FAF8F4; border-radius: 12px; padding: 10px 12px;
+    /* === Section 標題 === */
+    .section-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 4px 10px;
     }
-    .step-num {
-      width: 24px; height: 24px; border-radius: 50%; background: #A8D5BA;
-      color: #fff; font-size: 12px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
+    .section-head h2 { font-size: 19px; font-weight: 800; color: #2E2A26; letter-spacing: -.3px; }
+    .see-all { font-size: 13px; color: #857F75; font-weight: 600; }
 
-    /* 安全底部間距 */
-    .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 24px); }
+    /* === Quick 卡片 === */
+    .quick-card {
+      border-radius: 22px; padding: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+      min-height: 130px;
+    }
+    .qc-tag {
+      align-self: flex-start; font-size: 11px; font-weight: 700;
+      padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.75); color: #2E2A26;
+    }
+    .qc-title { font-weight: 800; color: #2E2A26; font-size: 15px; line-height: 1.25; }
+    .qc-sub   { font-size: 12px; color: #5d554c; line-height: 1.4; }
+
+    /* 底部導航高度補償 */
+    .has-bottom-nav { padding-bottom: calc(env(safe-area-inset-bottom) + 110px); }
+
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+
+    /* source tag */
+    .source-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 6px; margin-left: 4px; vertical-align: middle; }
+    .source-tag.poi  { background:#FBE6A1; color:#c07c00; }
+    .source-tag.addr { background:#E3DBF1; color:#6a4a94; }
   </style>
 </head>
-<body class="min-h-screen bg-cream font-sans">
+<body class="min-h-screen bg-canvas font-sans">
 
-  <!-- ===================== 頂部問候區 ===================== -->
-  <div class="relative overflow-hidden" style="background: linear-gradient(145deg,#FFF3D6 0%,#FAF8F4 60%)">
-
-    <!-- 頂部狀態列 -->
-    <div class="flex items-center justify-between px-5 pt-14 pb-2">
-      <div>
-        <p class="text-sm text-muted font-medium">出發吧！</p>
-        <h1 class="text-2xl font-black text-dark tracking-tight">公車到站提醒 🚌</h1>
+  <!-- ===================== 頂部問候 ===================== -->
+  <header class="px-5 pt-14 pb-3">
+    <div class="flex items-center justify-between mb-5">
+      <div class="flex-1 min-w-0">
+        <p class="text-xs text-muted font-medium mb-1">Welcome back</p>
+        <h1 class="text-[28px] font-black text-slate tracking-tight leading-tight">Hi, 旅客</h1>
       </div>
-      <!-- 狀態徽章 -->
       <div id="statusBadge"
-           class="px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all duration-300"
-           style="background:rgba(245,166,35,.15);border-color:#F5A623;color:#c07c00"
-           data-status="idle">
+           class="mr-3 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+           style="background:#FBE6A1;color:#8B5E00" data-status="idle">
         待機中
       </div>
-    </div>
-
-    <!-- 公車插圖 + 問候卡 -->
-    <div class="mx-4 mb-4 mt-1 rounded-3xl p-5 flex items-center justify-between gap-4"
-         style="background: linear-gradient(135deg,#F5A623 0%,#FFCA5C 100%); box-shadow: 0 6px 24px rgba(245,166,35,.35)">
-      <div class="flex-1">
-        <p class="text-white/80 text-sm font-medium mb-1">搭車不再睡過站！</p>
-        <p class="text-white font-black text-lg leading-snug">設定目的地<br>安心補眠 😴</p>
-      </div>
-      <!-- 公車 SVG 插圖 -->
-      <div class="bus-svg flex-shrink-0">
-        <svg width="90" height="70" viewBox="0 0 90 70" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- 車身 -->
-          <rect x="5" y="15" width="75" height="38" rx="10" fill="white" fill-opacity=".9"/>
-          <!-- 車頂 -->
-          <rect x="12" y="8" width="61" height="14" rx="6" fill="white" fill-opacity=".7"/>
-          <!-- 車窗 1 -->
-          <rect x="14" y="20" width="18" height="14" rx="4" fill="#FFF3D6"/>
-          <!-- 車窗 2 -->
-          <rect x="36" y="20" width="18" height="14" rx="4" fill="#FFF3D6"/>
-          <!-- 車窗 3 -->
-          <rect x="58" y="20" width="14" height="14" rx="4" fill="#FFF3D6"/>
-          <!-- 門 -->
-          <rect x="36" y="34" width="18" height="19" rx="4" fill="#FFF3D6" fill-opacity=".8"/>
-          <!-- 車輪左 -->
-          <circle cx="20" cy="55" r="9" fill="#3D3530"/>
-          <circle cx="20" cy="55" r="4" fill="#A8A09A"/>
-          <!-- 車輪右 -->
-          <circle cx="65" cy="55" r="9" fill="#3D3530"/>
-          <circle cx="65" cy="55" r="4" fill="#A8A09A"/>
-          <!-- 笑臉 -->
-          <circle cx="23" cy="26" r="2" fill="#F5A623"/>
-          <circle cx="29" cy="26" r="2" fill="#F5A623"/>
-          <path d="M22 30 Q26 33 30 30" stroke="#F5A623" stroke-width="1.5" stroke-linecap="round" fill="none"/>
-          <!-- 道路 -->
-          <rect x="0" y="63" width="90" height="7" rx="3.5" fill="white" fill-opacity=".4"/>
-          <rect x="10" y="65.5" width="15" height="2" rx="1" fill="white" fill-opacity=".6"/>
-          <rect x="37" y="65.5" width="15" height="2" rx="1" fill="white" fill-opacity=".6"/>
-          <rect x="64" y="65.5" width="15" height="2" rx="1" fill="white" fill-opacity=".6"/>
+      <!-- 頭像：公車插畫 -->
+      <div class="avatar-badge">
+        <svg width="32" height="26" viewBox="0 0 32 26" fill="none">
+          <rect x="1" y="6" width="30" height="16" rx="5" fill="white"/>
+          <rect x="4" y="3" width="24" height="7" rx="3.5" fill="white" fill-opacity=".85"/>
+          <rect x="4" y="10" width="8" height="6" rx="2" fill="#FBE6A1"/>
+          <rect x="14" y="10" width="8" height="6" rx="2" fill="#FBE6A1"/>
+          <circle cx="8"  cy="24" r="3.5" fill="#2E2A26"/>
+          <circle cx="24" cy="24" r="3.5" fill="#2E2A26"/>
         </svg>
       </div>
     </div>
-  </div>
+    <!-- 週日期條 -->
+    <div class="day-strip" id="dayStrip"></div>
+  </header>
 
-  <!-- ===================== 主面板（可捲動） ===================== -->
-  <main id="mainPanel" class="px-4 pb-8 safe-bottom space-y-4">
+  <!-- ===================== 主面板 ===================== -->
+  <main id="mainPanel" class="px-4 has-bottom-nav space-y-5">
 
-    <!-- ===== 距離顯示卡片 ===== -->
-    <div id="distanceCard"
-         class="rounded-3xl p-6 text-center transition-all duration-500 shadow-card"
-         style="background:#fff"
-         data-status="idle">
-      <div class="gps-status-pill mb-3" id="gpsStatusPill" data-status="ok" style="display:none">
-        📡 GPS 訊號正常
+    <!-- ===== My Journey：英雄卡 ===== -->
+    <section>
+      <div class="section-head">
+        <h2>我的旅程</h2>
+        <span class="see-all">See all</span>
       </div>
-      <div class="distance-number text-warm" id="distanceValue">--</div>
-      <div class="text-muted text-sm mt-1 font-medium" id="distanceLabel">距目的地（公尺）</div>
-      <div class="text-xs text-muted/70 mt-1" id="accuracyLabel"></div>
-    </div>
+      <div class="rounded-4xl p-5 overflow-hidden relative"
+           style="background:linear-gradient(145deg,#F5C543 0%,#FFCB3C 100%);
+                  box-shadow:0 10px 28px rgba(245,197,67,.35)">
+        <div class="flex items-end justify-between">
+          <div class="flex-1">
+            <p class="font-black text-slate text-2xl leading-snug mb-2">Let's start<br>your trip</p>
+            <p class="text-slate/70 text-xs font-semibold">設定目的地，安心補眠 😴</p>
+          </div>
 
-    <!-- ===== 到站時間估算卡片（監聽中才顯示） ===== -->
-    <div id="etaCard" style="display:none"
-         class="rounded-3xl p-5 shadow-card"
-         style="background: linear-gradient(135deg,#E8F7EE 0%,#F0FAF4 100%)">
-      <div class="flex items-center gap-2 mb-3">
-        <span class="w-8 h-8 rounded-full flex items-center justify-center text-base"
-              style="background:#A8D5BA33">⏱️</span>
-        <h2 class="font-bold text-base" style="color:#1b5e20">預估到站時間</h2>
-        <span class="ml-auto text-xs px-2 py-0.5 rounded-full font-semibold"
-              style="background:#A8D5BA;color:#fff">OSRM 道路估算</span>
-      </div>
-      <div class="text-center py-2">
-        <div id="etaValue" class="font-black" style="font-size:3rem;line-height:1;color:#2e7d32">--</div>
-        <div id="etaSub" class="text-xs mt-2" style="color:#4a7c59"></div>
-        <div id="etaRoadDist" class="text-xs mt-1" style="color:#718096"></div>
-      </div>
-      <!-- 公車速度調整 -->
-      <div class="mt-4 pt-4" style="border-top:1px solid #C8E6C9">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-sm font-semibold" style="color:#2e7d32">公車速度</span>
-          <span class="font-black text-base" style="color:#2e7d32">
-            <span id="busSpeedValue">20</span> km/h
-          </span>
+          <!-- 英雄插畫：天空 + 山丘 + 公車 + 太陽 -->
+          <div class="flex-shrink-0 relative" style="width:130px;height:100px">
+            <!-- 山丘 -->
+            <svg class="absolute bottom-0 left-0" width="130" height="60" viewBox="0 0 130 60" fill="none">
+              <ellipse cx="25"  cy="70" rx="40" ry="30" fill="#7A9A5C"/>
+              <ellipse cx="108" cy="70" rx="45" ry="32" fill="#6d8c50"/>
+              <!-- 小樹 -->
+              <path d="M10 44 L14 28 L18 44Z" fill="#56763b"/>
+              <path d="M112 42 L116 26 L120 42Z" fill="#56763b"/>
+              <path d="M8  40 L12 30 L16 40Z" fill="#56763b" opacity=".7"/>
+              <path d="M115 40 L118 32 L121 40Z" fill="#56763b" opacity=".7"/>
+            </svg>
+            <!-- 公車（插畫風格） -->
+            <div class="bus-scene absolute" style="left:14px;bottom:16px">
+              <svg width="92" height="60" viewBox="0 0 92 60" fill="none">
+                <!-- 車身 -->
+                <rect x="0" y="12" width="80" height="36" rx="10" fill="white"/>
+                <!-- 車頂 -->
+                <rect x="6" y="5" width="68" height="13" rx="6" fill="white" fill-opacity=".85"/>
+                <!-- 車窗 -->
+                <rect x="8"  y="20" width="18" height="14" rx="4" fill="#FBE6A1"/>
+                <rect x="30" y="20" width="18" height="14" rx="4" fill="#FBE6A1"/>
+                <rect x="52" y="20" width="16" height="14" rx="4" fill="#FBE6A1"/>
+                <!-- 車門 -->
+                <rect x="30" y="34" width="18" height="14" rx="4" fill="#FBE6A1" fill-opacity=".7"/>
+                <!-- 車輪 -->
+                <circle cx="18" cy="51" r="9"   fill="#2E2A26"/>
+                <circle cx="18" cy="51" r="4.5" fill="#9A948E"/>
+                <circle cx="62" cy="51" r="9"   fill="#2E2A26"/>
+                <circle cx="62" cy="51" r="4.5" fill="#9A948E"/>
+              </svg>
+            </div>
+            <!-- 太陽（附圖風格，笑臉） -->
+            <div class="sun-pulse absolute" style="right:2px;top:0">
+              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                <!-- 光芒 -->
+                <line x1="20" y1="2"  x2="20" y2="7"  stroke="#FFCA3C" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="20" y1="33" x2="20" y2="38" stroke="#FFCA3C" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="2"  y1="20" x2="7"  y2="20" stroke="#FFCA3C" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="33" y1="20" x2="38" y2="20" stroke="#FFCA3C" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="6.9"  y1="6.9"  x2="10.5" y2="10.5" stroke="#FFCA3C" stroke-width="2" stroke-linecap="round"/>
+                <line x1="29.5" y1="29.5" x2="33.1" y2="33.1" stroke="#FFCA3C" stroke-width="2" stroke-linecap="round"/>
+                <line x1="33.1" y1="6.9"  x2="29.5" y2="10.5" stroke="#FFCA3C" stroke-width="2" stroke-linecap="round"/>
+                <line x1="10.5" y1="29.5" x2="6.9"  y2="33.1" stroke="#FFCA3C" stroke-width="2" stroke-linecap="round"/>
+                <!-- 太陽臉 -->
+                <circle cx="20" cy="20" r="11" fill="#F5C543"/>
+                <!-- 眼睛 -->
+                <circle cx="16.5" cy="18" r="1.8" fill="#2E2A26"/>
+                <circle cx="23.5" cy="18" r="1.8" fill="#2E2A26"/>
+                <!-- 微笑 -->
+                <path d="M15.5 22.5 Q20 26.5 24.5 22.5" stroke="#2E2A26" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+            <!-- 白雲 -->
+            <svg class="absolute" style="left:0;top:8px" width="50" height="20" viewBox="0 0 50 20" fill="none">
+              <ellipse cx="20" cy="14" rx="18" ry="10" fill="white" fill-opacity=".75"/>
+              <ellipse cx="30" cy="16" rx="14" ry="8"  fill="white" fill-opacity=".65"/>
+            </svg>
+          </div>
         </div>
-        <input type="range" id="busSpeedSlider"
-               min="10" max="50" step="5" value="20"
-               class="w-full"
-               oninput="onBusSpeedChange(this.value)"
-               style="-webkit-appearance:none;height:6px;border-radius:3px;outline:none;
-                      background:linear-gradient(to right,#A8D5BA 40%,#E8E2D8 40%)">
-        <div class="flex justify-between text-xs mt-1" style="color:#718096">
-          <span>市區慢速 10</span>
-          <span>一般 20-25</span>
-          <span>快速 50</span>
+      </div>
+    </section>
+
+    <!-- ===== Quick Settings ===== -->
+    <section>
+      <div class="section-head">
+        <h2>Quick Settings</h2>
+        <span class="see-all">See all</span>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="quick-card" style="background:#F7D7D1">
+          <span class="qc-tag">Distance</span>
+          <!-- 目標插畫 -->
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+            <circle cx="18" cy="18" r="16" fill="#F29A90" fill-opacity=".3"/>
+            <circle cx="18" cy="18" r="11" fill="#F29A90" fill-opacity=".5"/>
+            <circle cx="18" cy="18" r="6"  fill="#E56060"/>
+            <circle cx="18" cy="18" r="2.5" fill="white"/>
+          </svg>
+          <p class="qc-title">提醒半徑 設定</p>
+          <p class="qc-sub">距離多遠就叫醒我？</p>
+        </div>
+        <div class="quick-card" style="background:#E3DBF1">
+          <span class="qc-tag">Sound</span>
+          <!-- 音符插畫 -->
+          <svg width="36" height="36" viewBox="130 140 475 475">
+            <path d="M441.910217,235.089020 C456.601013,247.911423 471.515961,259.968048 484.745422,273.868896 C512.066956,302.576965 522.775635,336.748352 518.805542,376.015747 C516.309326,400.705200 507.602020,423.260620 495.914642,444.698395 C490.865173,453.960419 482.747009,461.169342 474.946838,468.486542 C472.651978,466.223602 473.579010,464.131836 474.110962,462.422607 C480.874908,440.688660 482.829803,418.444580 481.740295,395.802246 C480.379333,367.518005 474.135559,340.868317 457.507446,317.238831 C444.620392,298.925598 427.307343,288.203064 405.310394,284.664886 C401.635193,284.073761 399.876282,285.022705 400.045258,288.921783 C400.996643,310.872650 401.859467,332.827515 402.865448,354.775848 C403.238953,362.925232 403.456970,371.081238 403.829376,379.230927 C405.554352,416.977997 407.878662,454.701141 407.153168,492.540405 C406.659302,518.298096 395.519806,538.199890 375.946564,553.957214 C347.622345,576.759399 314.936096,585.219727 279.173340,582.004272 C264.466309,580.681946 249.799316,576.911743 238.488312,566.993103 C219.081863,549.975586 217.352036,538.526672 227.902954,513.174744 C234.067413,498.362701 245.571854,487.874664 258.439667,478.960022 C286.420654,459.575226 317.524719,452.261536 351.295715,455.613495 C356.275574,456.107788 361.201324,456.764221 366.097382,457.776093 C372.864685,459.174652 372.935913,459.119843 372.717072,452.377930 C372.155426,435.072784 371.437347,417.772186 370.968719,400.464691 C370.103302,368.502747 369.487976,336.533844 368.554718,304.574036 C367.383301,264.460144 365.997040,224.352554 364.702698,184.242264 C364.686554,183.742737 364.672729,183.242584 364.636017,182.744339 C363.721680,170.339798 364.024353,170.031555 376.297577,169.902740 C381.126953,169.852081 385.957184,169.717590 390.782684,169.516907 C394.420868,169.365616 397.019287,170.744385 397.934662,174.360947 C403.577637,196.656891 417.717682,213.215118 434.175354,228.219757 C436.636383,230.463516 439.143646,232.656601 441.910217,235.089020 z" fill="#6a4a94"/>
+          </svg>
+          <p class="qc-title">警報音效 選擇</p>
+          <p class="qc-sub">溫柔喚醒 or 急促警報</p>
         </div>
       </div>
-    </div>
+    </section>
+
+    <!-- ===== 距離大數字卡 ===== -->
+    <section>
+      <div class="section-head">
+        <h2>到達距離</h2>
+        <span id="gpsStatusPill" class="gps-status-pill" data-status="ok">
+          <!-- GPS 衛星圖示 -->
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="2.5" fill="#4a6f2f"/>
+            <path d="M2 7 Q2 2 7 2 Q12 2 12 7" stroke="#4a6f2f" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            <path d="M4 7 Q4 4 7 4 Q10 4 10 7" stroke="#4a6f2f" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          </svg>
+          GPS 正常
+        </span>
+      </div>
+      <div id="distanceCard" class="rounded-4xl p-7 text-center bg-card shadow-card transition-all" data-status="idle">
+        <div class="distance-number" id="distanceValue">--</div>
+        <div class="text-muted text-sm mt-3 font-semibold" id="distanceLabel">公尺 到目的地</div>
+        <div class="text-xs text-muted/70 mt-1" id="accuracyLabel"></div>
+      </div>
+    </section>
+
+    <!-- ===== ETA 卡片 ===== -->
+    <section id="etaCard" style="display:none">
+      <div class="section-head">
+        <h2>預估到站</h2>
+        <span style="background:#7A9A5C;color:#fff;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800">OSRM</span>
+      </div>
+      <div class="rounded-4xl p-5 shadow-card" style="background:linear-gradient(145deg,#E9F2E0,#F1F6E8)">
+        <div class="text-center py-2">
+          <div id="etaValue" class="font-black" style="font-size:3.5rem;line-height:1;color:#4a6f2f">--</div>
+          <div id="etaSub"      class="text-xs mt-2 font-semibold" style="color:#5d7a42"></div>
+          <div id="etaRoadDist" class="text-xs mt-1" style="color:#857F75"></div>
+        </div>
+        <div class="mt-4 pt-4" style="border-top:1px solid #C7D9B3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-bold" style="color:#4a6f2f">公車速度</span>
+            <span class="font-black text-base" style="color:#4a6f2f">
+              <span id="busSpeedValue">20</span> km/h
+            </span>
+          </div>
+          <input type="range" id="busSpeedSlider" min="10" max="50" step="5" value="20"
+                 class="w-full" oninput="onBusSpeedChange(this.value)"
+                 style="-webkit-appearance:none;height:6px;border-radius:3px;outline:none;
+                        background:linear-gradient(to right,#7A9A5C 40%,#E2DCD0 40%)">
+          <div class="flex justify-between text-xs mt-1" style="color:#857F75">
+            <span>10</span><span>20–25</span><span>50</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- ===== 目前位置卡片 ===== -->
-    <div class="bg-card rounded-3xl p-5 shadow-card">
-      <div class="flex items-center gap-2 mb-3">
-        <span class="w-8 h-8 rounded-full bg-mint-light flex items-center justify-center text-base">📍</span>
-        <h2 class="font-bold text-dark text-base">目前位置</h2>
+    <section class="bg-card rounded-4xl p-5 shadow-card">
+      <div class="flex items-center gap-3 mb-3">
+        <!-- 位置圖示 -->
+        <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style="background:#E9F2E0">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 2 C6.5 2 4 4.8 4 8 C4 12.5 10 18 10 18 C10 18 16 12.5 16 8 C16 4.8 13.5 2 10 2Z" fill="#7A9A5C"/>
+            <circle cx="10" cy="8" r="2.8" fill="white"/>
+          </svg>
+        </div>
+        <h2 class="font-black text-slate text-base">目前位置</h2>
       </div>
       <div class="flex items-center justify-between gap-3">
         <p class="text-sm text-muted font-mono flex-1 leading-snug" id="currentLocText">取得中…</p>
         <button onclick="relocate()"
-                class="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl border-2 border-mint text-sage transition-all active:scale-95">
-          🔄 重新定位
+                class="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
+                style="background:#E9F2E0;color:#4a6f2f">
+          重新定位
         </button>
       </div>
       <p class="text-xs text-muted/70 mt-1" id="accuracyPill"></p>
-    </div>
+    </section>
 
     <!-- ===== 地圖 ===== -->
-    <div class="bg-card rounded-3xl p-3 shadow-card">
+    <section class="bg-card rounded-4xl p-3 shadow-card">
       <div id="map">
         <div id="mapHintBar" style="display:none">
-          <span>👆 點擊地圖設定目的地</span>
+          <span>點擊地圖設定目的地</span>
           <button onclick="cancelMapSelect()"
-                  class="text-xs bg-white/30 border border-white/50 text-white rounded-lg px-3 py-1">取消</button>
+                  class="text-xs bg-white/50 text-slate rounded-lg px-3 py-1 font-bold">取消</button>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- ===== 目的地搜尋卡片 ===== -->
-    <div class="bg-card rounded-3xl p-5 shadow-card">
-      <div class="flex items-center gap-2 mb-4">
-        <span class="w-8 h-8 rounded-full bg-mint-light flex items-center justify-center text-base">🎯</span>
-        <h2 class="font-bold text-dark text-base">目的地設定</h2>
+    <!-- ===== 目的地搜尋 ===== -->
+    <section class="bg-card rounded-4xl p-5 shadow-card">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style="background:#FBE6A1">
+          <!-- 目標圖示 -->
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="8"   fill="#F5C543" fill-opacity=".4"/>
+            <circle cx="10" cy="10" r="5.5" fill="#F5C543" fill-opacity=".6"/>
+            <circle cx="10" cy="10" r="3"   fill="#C27B00"/>
+            <circle cx="10" cy="10" r="1.2" fill="white"/>
+          </svg>
+        </div>
+        <h2 class="font-black text-slate text-base">目的地設定</h2>
       </div>
-
-      <!-- 搜尋框 -->
       <div class="flex gap-2 mb-2">
         <input type="text" id="searchInput"
-               class="flex-1 bg-cream border-2 border-transparent rounded-2xl px-4 py-3 text-sm text-dark placeholder-muted/60 outline-none transition-all focus:border-mint focus:bg-white"
+               class="flex-1 border-2 border-transparent rounded-2xl px-4 py-3 text-sm text-slate outline-none transition-all focus:border-sunshine"
+               style="background:#F5ECD5"
                placeholder="搜尋地址、捷運站、地標…"
                autocomplete="off"
                onkeydown="if(event.key==='Enter') searchPlace()"
                oninput="onSearchInput(this.value)">
         <button id="searchBtn" onclick="searchPlace()"
-                class="w-12 h-12 rounded-2xl flex items-center justify-center text-xl transition-all active:scale-95"
-                style="background:#A8D5BA; color:#fff">
-          🔍
+                class="w-12 h-12 rounded-2xl flex items-center justify-center transition-all active:scale-95"
+                style="background:#F5C543">
+          <!-- 搜尋圖示 -->
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <circle cx="9.5" cy="9.5" r="6" stroke="#2E2A26" stroke-width="2.2" fill="none"/>
+            <line x1="14" y1="14" x2="20" y2="20" stroke="#2E2A26" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
         </button>
       </div>
-
-      <!-- 搜尋結果 -->
       <div id="searchResults" class="max-h-56 overflow-y-auto"></div>
-
-      <!-- 已選目的地 -->
-      <div id="destInfoBox"
-           class="hidden mt-3 rounded-2xl p-4 border-2 border-mint flex items-start gap-3"
-           style="background:#E8F7EE">
-        <span class="text-2xl flex-shrink-0">🎯</span>
+      <div id="destInfoBox" class="hidden mt-3 rounded-2xl p-4 flex items-start gap-3"
+           style="background:#E9F2E0;border:2px solid #7A9A5C">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="flex-shrink-0 mt-0.5">
+          <path d="M12 2 C8 2 5 5.2 5 9 C5 14 12 21 12 21 C12 21 19 14 19 9 C19 5.2 16 2 12 2Z" fill="#7A9A5C"/>
+          <circle cx="12" cy="9" r="3" fill="white"/>
+        </svg>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-bold text-dark leading-snug" id="destName">未設定</p>
+          <p class="text-sm font-bold text-slate leading-snug" id="destName">未設定</p>
           <p class="text-xs text-muted font-mono mt-0.5" id="destCoords"></p>
         </div>
         <button onclick="clearDestination()"
-                class="text-muted text-xs border border-gray-200 rounded-lg px-2 py-1 flex-shrink-0 transition-all active:scale-95">
-          ✕
-        </button>
+                class="text-muted text-xs border border-hairline rounded-lg px-2 py-1 flex-shrink-0 active:scale-95">✕</button>
       </div>
-
-      <!-- 在地圖上選取 -->
       <button id="btnMapSelect" onclick="toggleMapSelect()"
-              class="w-full mt-3 py-3 rounded-2xl border-2 border-dashed border-mint text-sage text-sm font-semibold transition-all active:scale-95">
-        🗺️ 或在地圖上直接點選目的地
+              class="w-full mt-3 py-3 rounded-2xl text-sm font-bold transition-all active:scale-95"
+              style="background:#E9F2E0;color:#4a6f2f;border:2px dashed #7A9A5C">
+        或在地圖上直接點選目的地
       </button>
-    </div>
+    </section>
 
-    <!-- ===== 提醒半徑卡片 ===== -->
-    <div class="bg-card rounded-3xl p-5 shadow-card">
-      <div class="flex items-center gap-2 mb-4">
-        <span class="w-8 h-8 rounded-full bg-warm-light flex items-center justify-center text-base">🎯</span>
-        <h2 class="font-bold text-dark text-base">提醒半徑</h2>
+    <!-- ===== 提醒半徑 ===== -->
+    <section class="bg-card rounded-4xl p-5 shadow-card">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style="background:#FBE6A1">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="8"   stroke="#F5C543" stroke-width="2" fill="none"/>
+            <circle cx="10" cy="10" r="4.5" stroke="#F5C543" stroke-width="2" fill="none"/>
+            <circle cx="10" cy="10" r="1.5" fill="#C27B00"/>
+          </svg>
+        </div>
+        <h2 class="font-black text-slate text-base">提醒半徑</h2>
       </div>
-
-      <!-- 滑桿 -->
       <div class="flex items-center gap-3 mb-4">
         <input type="range" id="radiusSlider" min="200" max="800" step="50" value="500"
                class="flex-1" oninput="onRadiusChange(this.value)" aria-label="提醒半徑">
         <div class="text-right min-w-20">
-          <span id="radiusValue" class="text-2xl font-black text-warm">500</span>
-          <span class="text-xs text-muted ml-1">公尺</span>
+          <span id="radiusValue" class="text-3xl font-black text-slate">500</span>
+          <span class="text-xs text-muted ml-1">m</span>
         </div>
       </div>
-
-      <!-- 預設按鈕 -->
       <div class="grid grid-cols-3 gap-2 mb-3">
-        <button class="preset-btn py-2.5 rounded-2xl border-2 border-gray-200 bg-cream text-sm font-bold text-muted transition-all active:scale-95"
-                data-r="200" onclick="setRadius(200)">近 200m</button>
-        <button class="preset-btn py-2.5 rounded-2xl border-2 text-sm font-bold transition-all active:scale-95 active"
-                style="border-color:#F5A623;background:#FFF3D6;color:#c07c00"
-                data-r="500" onclick="setRadius(500)">標準 500m</button>
-        <button class="preset-btn py-2.5 rounded-2xl border-2 border-gray-200 bg-cream text-sm font-bold text-muted transition-all active:scale-95"
-                data-r="800" onclick="setRadius(800)">遠 800m</button>
+        <button class="preset-btn py-2.5 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                style="background:#F5ECD5;color:#857F75" data-r="200" onclick="setRadius(200)">近 200m</button>
+        <button class="preset-btn py-2.5 rounded-2xl text-sm font-black transition-all active:scale-95 active"
+                style="background:#F5C543;color:#2E2A26" data-r="500" onclick="setRadius(500)">標準 500m</button>
+        <button class="preset-btn py-2.5 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                style="background:#F5ECD5;color:#857F75" data-r="800" onclick="setRadius(800)">遠 800m</button>
       </div>
+      <p class="text-xs text-muted/80">距離 ≤ 200m 時觸發加強版震動與警報</p>
+    </section>
 
-      <p class="text-xs text-muted/70">⚡ 距離 ≤ 200m 時觸發加強版震動與警報</p>
-    </div>
-
-    <!-- ===== 提醒方式卡片 ===== -->
-    <div class="bg-card rounded-3xl p-5 shadow-card">
-      <div class="flex items-center gap-2 mb-4">
-        <span class="w-8 h-8 rounded-full bg-lav-light flex items-center justify-center text-base">🔔</span>
-        <h2 class="font-bold text-dark text-base">提醒方式</h2>
+    <!-- ===== 提醒方式 ===== -->
+    <section class="bg-card rounded-4xl p-5 shadow-card">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style="background:#E3DBF1">
+          <!-- 鈴鐺圖示 -->
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <!-- 手柄 -->
+            <rect x="9" y="0.5" width="2" height="3" rx="1" fill="#4a2a74"/>
+            <!-- 鈴身（兩側完全對稱曲線） -->
+            <path d="M10 3.5 C7 3.5 5 6 4 14 L16 14 C15 6 13 3.5 10 3.5Z" fill="#6a4a94"/>
+            <!-- 底邊 -->
+            <ellipse cx="10" cy="14" rx="6.5" ry="1.5" fill="#4a2a74"/>
+            <!-- 鈴舌 -->
+            <circle cx="10" cy="17.5" r="1.6" fill="#4a2a74"/>
+          </svg>
+        </div>
+        <h2 class="font-black text-slate text-base">提醒方式</h2>
       </div>
-
       <div class="space-y-1">
         <!-- 震動 -->
-        <div class="py-3 border-b border-gray-100">
+        <div class="py-3 border-b border-hairline">
           <label class="flex items-center justify-between cursor-pointer">
             <div class="flex items-center gap-3">
-              <span class="text-xl">📳</span>
+              <!-- 震動圖示 -->
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <rect x="8" y="4" width="10" height="18" rx="4" fill="#9d6eb3"/>
+                <line x1="2"  y1="9"  x2="6"  y2="9"  stroke="#9d6eb3" stroke-width="2.2" stroke-linecap="round"/>
+                <line x1="2"  y1="13" x2="6"  y2="13" stroke="#9d6eb3" stroke-width="2.2" stroke-linecap="round"/>
+                <line x1="2"  y1="17" x2="6"  y2="17" stroke="#9d6eb3" stroke-width="2.2" stroke-linecap="round"/>
+                <line x1="20" y1="9"  x2="24" y2="9"  stroke="#9d6eb3" stroke-width="2.2" stroke-linecap="round"/>
+                <line x1="20" y1="13" x2="24" y2="13" stroke="#9d6eb3" stroke-width="2.2" stroke-linecap="round"/>
+                <line x1="20" y1="17" x2="24" y2="17" stroke="#9d6eb3" stroke-width="2.2" stroke-linecap="round"/>
+              </svg>
               <div>
-                <span class="text-sm font-semibold text-dark">震動提醒</span>
-                <p class="text-xs text-muted/70 mt-0.5">iOS 裝置不支援此功能</p>
+                <span class="text-sm font-bold text-slate">震動提醒</span>
+                <p class="text-xs text-muted mt-0.5">iOS 裝置不支援此功能</p>
               </div>
             </div>
             <div class="flex items-center gap-2">
@@ -511,107 +646,188 @@
             </div>
           </label>
           <button onclick="testVibrate()"
-                  class="mt-2 w-full text-xs font-semibold py-2 rounded-xl border-2 transition-all active:scale-95"
-                  style="border-color:#C4A8D5;color:#7b3fa0;background:#F2ECF9">
-            📳 測試震動是否正常
+                  class="mt-2 w-full text-xs font-bold py-2.5 rounded-xl transition-all active:scale-95"
+                  style="background:#E3DBF1;color:#6a4a94">
+            測試震動是否正常
           </button>
         </div>
         <!-- 聲音 -->
-        <label class="flex items-center justify-between py-3 border-b border-gray-100 cursor-pointer">
+        <label class="flex items-center justify-between py-3 border-b border-hairline cursor-pointer">
           <div class="flex items-center gap-3">
-            <span class="text-xl">🔊</span>
-            <span class="text-sm font-semibold text-dark">聲音提醒</span>
+            <!-- 喇叭圖示 -->
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+              <path d="M4 10 L4 16 L8 16 L14 20 L14 6 L8 10 Z" fill="#5B9EC9"/>
+              <path d="M17 9.5 Q20 13 17 16.5" stroke="#5B9EC9" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+              <path d="M20 7 Q24 13 20 19" stroke="#5B9EC9" stroke-width="2" stroke-linecap="round" fill="none" opacity=".7"/>
+            </svg>
+            <span class="text-sm font-bold text-slate">聲音提醒</span>
           </div>
           <div class="flex items-center gap-2">
             <input type="checkbox" id="chkSound" checked onchange="saveSettings()">
             <span class="toggle-track"></span>
           </div>
         </label>
-        <!-- 系統通知 -->
+        <!-- 通知 -->
         <label class="flex items-center justify-between py-3 cursor-pointer">
           <div class="flex items-center gap-3">
-            <span class="text-xl">🔔</span>
-            <span class="text-sm font-semibold text-dark">系統通知</span>
+            <!-- 通知鈴（與鈴聲按鈕相同結構） -->
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+              <!-- 手柄 -->
+              <rect x="11.5" y="0.5" width="2.5" height="3.5" rx="1.25" fill="#C27B00"/>
+              <!-- 鈴身 -->
+              <path d="M13 4 C8 4 5.5 8.5 5.5 13 L4 19 L22 19 L20.5 13 C20.5 8.5 18 4 13 4Z" fill="#F5C543"/>
+              <!-- 底邊橢圓（與鈴聲按鈕一致） -->
+              <ellipse cx="13" cy="19" rx="9" ry="2" fill="#E8941A"/>
+              <!-- 鈴舌（小一號，留足間距） -->
+              <circle cx="13" cy="23.5" r="1.6" fill="#C27B00"/>
+            </svg>
+            <span class="text-sm font-bold text-slate">系統通知</span>
           </div>
           <div class="flex items-center gap-2">
             <input type="checkbox" id="chkNotification" checked onchange="onNotificationToggle()">
             <span class="toggle-track"></span>
           </div>
         </label>
-
-        <!-- iOS Web Push 狀態 -->
-        <div class="mt-3 p-3 rounded-2xl" style="background:#F2ECF9">
-          <p class="text-xs font-bold mb-1" style="color:#7b3fa0">🍎 iOS 背景提醒（Web Push）</p>
-          <p class="text-xs mb-2" style="color:#555">
-            螢幕關閉或切換到其他 App 時，透過伺服器推播通知喚醒螢幕。<br>
-            需先將此網頁<strong>加入主畫面</strong>（iOS 16.4+）。
+        <!-- iOS Push -->
+        <div class="mt-3 p-4 rounded-2xl" style="background:#E3DBF1">
+          <p class="text-xs font-black mb-1.5" style="color:#6a4a94">iOS 背景提醒（Web Push）</p>
+          <p class="text-xs mb-2 leading-relaxed" style="color:#5d554c">
+            螢幕關閉或切到其他 App 時，透過伺服器推播喚醒螢幕。需先<strong>加入主畫面</strong>（iOS 16.4+）。
           </p>
-          <span id="pushStatusBadge"
-                class="text-xs font-semibold px-3 py-1 rounded-full"
-                style="display:none">
-          </span>
-          <p class="text-xs mt-2" style="color:#999">
-            尚未設定 Vercel 後端時此功能不會啟用。
-          </p>
+          <span id="pushStatusBadge" class="text-xs font-semibold px-3 py-1 rounded-full" style="display:none"></span>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- ===== 警報音效卡片 ===== -->
-    <div class="bg-card rounded-3xl p-5 shadow-card" id="soundSection">
-      <div class="flex items-center gap-2 mb-4">
-        <span class="w-8 h-8 rounded-full bg-lav-light flex items-center justify-center text-base">🎵</span>
-        <h2 class="font-bold text-dark text-base">警報音效</h2>
+    <!-- ===== 警報音效（附圖重點區域） ===== -->
+    <section class="bg-card rounded-4xl p-5 shadow-card" id="soundSection">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style="background:#E3DBF1">
+          <!-- 音符圖示 -->
+          <svg width="20" height="20" viewBox="130 140 475 475">
+            <path d="M441.910217,235.089020 C456.601013,247.911423 471.515961,259.968048 484.745422,273.868896 C512.066956,302.576965 522.775635,336.748352 518.805542,376.015747 C516.309326,400.705200 507.602020,423.260620 495.914642,444.698395 C490.865173,453.960419 482.747009,461.169342 474.946838,468.486542 C472.651978,466.223602 473.579010,464.131836 474.110962,462.422607 C480.874908,440.688660 482.829803,418.444580 481.740295,395.802246 C480.379333,367.518005 474.135559,340.868317 457.507446,317.238831 C444.620392,298.925598 427.307343,288.203064 405.310394,284.664886 C401.635193,284.073761 399.876282,285.022705 400.045258,288.921783 C400.996643,310.872650 401.859467,332.827515 402.865448,354.775848 C403.238953,362.925232 403.456970,371.081238 403.829376,379.230927 C405.554352,416.977997 407.878662,454.701141 407.153168,492.540405 C406.659302,518.298096 395.519806,538.199890 375.946564,553.957214 C347.622345,576.759399 314.936096,585.219727 279.173340,582.004272 C264.466309,580.681946 249.799316,576.911743 238.488312,566.993103 C219.081863,549.975586 217.352036,538.526672 227.902954,513.174744 C234.067413,498.362701 245.571854,487.874664 258.439667,478.960022 C286.420654,459.575226 317.524719,452.261536 351.295715,455.613495 C356.275574,456.107788 361.201324,456.764221 366.097382,457.776093 C372.864685,459.174652 372.935913,459.119843 372.717072,452.377930 C372.155426,435.072784 371.437347,417.772186 370.968719,400.464691 C370.103302,368.502747 369.487976,336.533844 368.554718,304.574036 C367.383301,264.460144 365.997040,224.352554 364.702698,184.242264 C364.686554,183.742737 364.672729,183.242584 364.636017,182.744339 C363.721680,170.339798 364.024353,170.031555 376.297577,169.902740 C381.126953,169.852081 385.957184,169.717590 390.782684,169.516907 C394.420868,169.365616 397.019287,170.744385 397.934662,174.360947 C403.577637,196.656891 417.717682,213.215118 434.175354,228.219757 C436.636383,230.463516 439.143646,232.656601 441.910217,235.089020 z" fill="#6a4a94"/>
+          </svg>
+        </div>
+        <h2 class="font-black text-slate text-base">警報音效</h2>
       </div>
 
-      <!-- 音效選擇 -->
+      <!-- 音效按鈕格線 -->
       <div class="sound-grid mb-4">
+
+        <!-- 上升音階 -->
         <button class="sound-btn active" data-sound="melody" onclick="selectSound('melody')">
-          <span class="text-2xl">🎵</span>
-          <span class="text-xs font-semibold text-muted text-center leading-tight">上升音階</span>
+          <svg width="32" height="32" viewBox="130 140 475 475">
+            <path d="M441.910217,235.089020 C456.601013,247.911423 471.515961,259.968048 484.745422,273.868896 C512.066956,302.576965 522.775635,336.748352 518.805542,376.015747 C516.309326,400.705200 507.602020,423.260620 495.914642,444.698395 C490.865173,453.960419 482.747009,461.169342 474.946838,468.486542 C472.651978,466.223602 473.579010,464.131836 474.110962,462.422607 C480.874908,440.688660 482.829803,418.444580 481.740295,395.802246 C480.379333,367.518005 474.135559,340.868317 457.507446,317.238831 C444.620392,298.925598 427.307343,288.203064 405.310394,284.664886 C401.635193,284.073761 399.876282,285.022705 400.045258,288.921783 C400.996643,310.872650 401.859467,332.827515 402.865448,354.775848 C403.238953,362.925232 403.456970,371.081238 403.829376,379.230927 C405.554352,416.977997 407.878662,454.701141 407.153168,492.540405 C406.659302,518.298096 395.519806,538.199890 375.946564,553.957214 C347.622345,576.759399 314.936096,585.219727 279.173340,582.004272 C264.466309,580.681946 249.799316,576.911743 238.488312,566.993103 C219.081863,549.975586 217.352036,538.526672 227.902954,513.174744 C234.067413,498.362701 245.571854,487.874664 258.439667,478.960022 C286.420654,459.575226 317.524719,452.261536 351.295715,455.613495 C356.275574,456.107788 361.201324,456.764221 366.097382,457.776093 C372.864685,459.174652 372.935913,459.119843 372.717072,452.377930 C372.155426,435.072784 371.437347,417.772186 370.968719,400.464691 C370.103302,368.502747 369.487976,336.533844 368.554718,304.574036 C367.383301,264.460144 365.997040,224.352554 364.702698,184.242264 C364.686554,183.742737 364.672729,183.242584 364.636017,182.744339 C363.721680,170.339798 364.024353,170.031555 376.297577,169.902740 C381.126953,169.852081 385.957184,169.717590 390.782684,169.516907 C394.420868,169.365616 397.019287,170.744385 397.934662,174.360947 C403.577637,196.656891 417.717682,213.215118 434.175354,228.219757 C436.636383,230.463516 439.143646,232.656601 441.910217,235.089020 z" fill="#6a4a94"/>
+          </svg>
+          <span class="icon-label">上升</span>
         </button>
+
+        <!-- 急促警報 -->
         <button class="sound-btn" data-sound="alarm" onclick="selectSound('alarm')">
-          <span class="text-2xl">🚨</span>
-          <span class="text-xs font-semibold text-muted text-center leading-tight">急促警報</span>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <!-- 閃光 -->
+            <path d="M16 3 L13 13 L17 13 L14 22 L20 11 L16 11 Z" fill="#FFCA3C"/>
+            <!-- 燈罩 -->
+            <rect x="7" y="15" width="18" height="10" rx="5" fill="#E56060"/>
+            <ellipse cx="16" cy="15" rx="8" ry="8" fill="#E56060"/>
+            <!-- 底座 -->
+            <rect x="10" y="25" width="12" height="4" rx="2" fill="#C04040"/>
+            <!-- 亮點 -->
+            <circle cx="20" cy="14" r="2.5" fill="white" fill-opacity=".4"/>
+          </svg>
+          <span class="icon-label">警報</span>
         </button>
+
+        <!-- 鈴聲 -->
         <button class="sound-btn" data-sound="bell" onclick="selectSound('bell')">
-          <span class="text-2xl">🔔</span>
-          <span class="text-xs font-semibold text-muted text-center leading-tight">鈴聲</span>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <!-- 手柄（置中） -->
+            <rect x="14.5" y="1" width="3" height="4.5" rx="1.5" fill="#C07800"/>
+            <!-- 鈴身（左右對稱） -->
+            <path d="M16 5 C10 5 7 10 7 16 L5 23 L27 23 L25 16 C25 10 22 5 16 5Z" fill="#F5A623"/>
+            <!-- 底邊橢圓（置中對稱） -->
+            <ellipse cx="16" cy="23" rx="11" ry="2.5" fill="#E8941A"/>
+            <!-- 鈴舌 -->
+            <circle cx="16" cy="28" r="2.8" fill="#C07800"/>
+          </svg>
+          <span class="icon-label">鈴聲</span>
         </button>
+
+        <!-- 號角 -->
         <button class="sound-btn" data-sound="bugle" onclick="selectSound('bugle')">
-          <span class="text-2xl">📯</span>
-          <span class="text-xs font-semibold text-muted text-center leading-tight">號角</span>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <!-- 號角管身 -->
+            <path d="M3 17 L3 21 L10 21 L10 17 Z" fill="#F5A623"/>
+            <rect x="10" y="14" width="14" height="10" rx="5" fill="#F5A623"/>
+            <!-- 喇叭口 -->
+            <ellipse cx="26" cy="19" rx="5" ry="8" fill="#E8941A"/>
+            <ellipse cx="26" cy="19" rx="3" ry="5" fill="#F5A623" fill-opacity=".4"/>
+            <!-- 按鍵 -->
+            <rect x="12" y="12" width="3" height="4" rx="1.5" fill="#C07800"/>
+            <rect x="17" y="12" width="3" height="4" rx="1.5" fill="#C07800"/>
+          </svg>
+          <span class="icon-label">號角</span>
         </button>
+
+        <!-- 溫柔喚醒 -->
         <button class="sound-btn" data-sound="gentle" onclick="selectSound('gentle')">
-          <span class="text-2xl">🌊</span>
-          <span class="text-xs font-semibold text-muted text-center leading-tight">溫柔喚醒</span>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <!-- 波浪 x3 -->
+            <path d="M2 12 Q5.5 7 9 12 Q12.5 17 16 12 Q19.5 7 23 12 Q26.5 17 30 12"
+                  stroke="#5B9EC9" stroke-width="3" stroke-linecap="round" fill="none"/>
+            <path d="M2 18 Q5.5 13 9 18 Q12.5 23 16 18 Q19.5 13 23 18 Q26.5 23 30 18"
+                  stroke="#5B9EC9" stroke-width="2.5" stroke-linecap="round" fill="none" opacity=".7"/>
+            <path d="M4 24 Q7 20 10 24 Q13 28 16 24 Q19 20 22 24"
+                  stroke="#5B9EC9" stroke-width="2" stroke-linecap="round" fill="none" opacity=".45"/>
+          </svg>
+          <span class="icon-label">溫柔</span>
         </button>
       </div>
 
-      <!-- 試聽按鈕 -->
+      <!-- 試聽 -->
       <button id="previewBtn" onclick="previewSound()"
-              class="w-full py-3 rounded-2xl border-2 border-lavender text-lavender text-sm font-bold mb-4 transition-all active:scale-95"
-              style="color:#9d6eb3; border-color:#C4A8D5">
-        ▶️ 試聽選取音效
+              class="w-full py-3 rounded-2xl text-sm font-black mb-4 transition-all active:scale-95 flex items-center justify-center gap-2"
+              style="background:#E3DBF1;color:#6a4a94">
+        <!-- 播放圖示 -->
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="8" fill="#6a4a94" fill-opacity=".15"/>
+          <path d="M7 5.5 L14 9 L7 12.5 Z" fill="#6a4a94"/>
+        </svg>
+        試聽選取音效
       </button>
 
       <!-- 音量 -->
       <div class="flex items-center gap-3 mb-4">
-        <span class="text-lg">🔈</span>
+        <!-- 小喇叭 -->
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M3 8 L3 12 L6 12 L10 15 L10 5 L6 8 Z" fill="#857F75"/>
+        </svg>
         <input type="range" id="volumeSlider" min="0" max="100" step="5" value="80"
                class="flex-1" oninput="onVolumeChange(this.value)" aria-label="音量">
-        <span class="text-lg">🔊</span>
-        <span class="text-base font-black min-w-8 text-right" id="volumeValue"
-              style="color:#C4A8D5">80</span>
+        <!-- 大喇叭 -->
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M3 8 L3 12 L6 12 L10 15 L10 5 L6 8 Z" fill="#4a6f2f"/>
+          <path d="M13 7 Q16 10 13 13" stroke="#4a6f2f" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+          <path d="M15 5 Q19 10 15 15" stroke="#4a6f2f" stroke-width="1.6" stroke-linecap="round" fill="none" opacity=".6"/>
+        </svg>
+        <span class="text-base font-black min-w-8 text-right" id="volumeValue" style="color:#4a6f2f">80</span>
         <span class="text-xs text-muted">%</span>
       </div>
 
       <!-- 耳機模式 -->
-      <div class="rounded-2xl p-4" style="background:#F2ECF9">
+      <div class="rounded-2xl p-4" style="background:#E3DBF1">
         <div class="flex items-start justify-between gap-3 mb-2">
           <div>
-            <p class="text-sm font-bold text-dark">🎧 耳機模式</p>
-            <p class="text-xs text-muted mt-0.5 leading-snug">開啟後未插耳機將不發聲，避免打擾鄰座</p>
+            <p class="text-sm font-black text-slate flex items-center gap-1.5">
+              <!-- 耳機圖示 -->
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" style="display:inline">
+                <path d="M3 10 C3 5.6 5.6 2 9 2 C12.4 2 15 5.6 15 10" stroke="#2E2A26" stroke-width="1.8" fill="none"/>
+                <rect x="1.5" y="9"   width="3.5" height="6" rx="1.75" fill="#2E2A26"/>
+                <rect x="13"  y="9"   width="3.5" height="6" rx="1.75" fill="#2E2A26"/>
+              </svg>
+              耳機模式
+            </p>
+            <p class="text-xs text-muted mt-0.5 leading-snug">開啟後未插耳機將不發聲</p>
           </div>
           <label class="flex items-center gap-2 mt-0.5 flex-shrink-0 cursor-pointer">
             <input type="checkbox" id="chkHeadphone" onchange="onHeadphoneModeToggle()">
@@ -619,110 +835,178 @@
           </label>
         </div>
         <div id="headphoneStatus" class="headphone-status hidden" style="margin-top:4px">
-          <span id="headphoneStatusIcon">🎧</span>
+          <span id="headphoneStatusIcon"></span>
           <span id="headphoneStatusText" class="ml-1.5">偵測中…</span>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- ===== 主控制按鈕 ===== -->
-    <div class="px-1 space-y-3">
+    <!-- ===== 主 CTA 按鈕 ===== -->
+    <section class="px-1 space-y-3 pt-2">
       <button id="btnStart" onclick="startMonitoring()"
-              class="w-full py-5 rounded-3xl text-white text-xl font-black tracking-wide transition-all active:scale-95"
-              style="background:linear-gradient(135deg,#F5A623,#FF8C42);box-shadow:0 6px 24px rgba(245,166,35,.45)">
-        🚀 啟動到站提醒
+              class="w-full py-5 rounded-full text-slate text-lg font-black tracking-wide transition-all active:scale-95 flex items-center justify-center gap-3"
+              style="background:#F5C543;box-shadow:0 10px 28px rgba(245,197,67,.45)">
+        <!-- 出發圖示（火箭/公車） -->
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <!-- 公車側面 -->
+          <rect x="2"  y="10" width="22" height="13" rx="4" fill="white" fill-opacity=".9"/>
+          <rect x="4"  y="7"  width="16" height="6"  rx="3" fill="white" fill-opacity=".75"/>
+          <rect x="4"  y="14" width="5"  height="5"  rx="1.5" fill="#FBE6A1"/>
+          <rect x="11" y="14" width="5"  height="5"  rx="1.5" fill="#FBE6A1"/>
+          <circle cx="7"  cy="24" r="3.2" fill="#2E2A26"/>
+          <circle cx="19" cy="24" r="3.2" fill="#2E2A26"/>
+          <!-- 速度線 -->
+          <line x1="25" y1="12" x2="28" y2="12" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+          <line x1="25" y1="16" x2="27" y2="16" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+          <line x1="25" y1="20" x2="28" y2="20" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+        </svg>
+        啟動到站提醒
       </button>
       <button id="btnStop" onclick="stopMonitoring()"
-              class="w-full py-5 rounded-3xl text-white text-xl font-black tracking-wide transition-all active:scale-95"
-              style="display:none;background:linear-gradient(135deg,#F28B82,#E07070)">
-        ⏹ 停止監聽
+              class="w-full py-5 rounded-full text-white text-lg font-black tracking-wide transition-all active:scale-95 flex items-center justify-center gap-3"
+              style="display:none;background:linear-gradient(135deg,#F29A90,#E07070);box-shadow:0 10px 28px rgba(242,154,144,.45)">
+        <!-- 停止圖示 -->
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <rect x="5" y="5" width="14" height="14" rx="3" fill="white"/>
+        </svg>
+        停止監聽
       </button>
-    </div>
+    </section>
 
-    <!-- ===== iOS 背景運作指引 ===== -->
-    <div id="iosBackgroundBanner" class="rounded-3xl p-5 shadow-card" style="display:none;background:linear-gradient(135deg,#E8F7EE,#F0FBF4);border:2px solid #A8D5BA">
+    <!-- ===== iOS 指引 ===== -->
+    <div id="iosBackgroundBanner" class="rounded-4xl p-5 shadow-card"
+         style="display:none;background:linear-gradient(145deg,#E9F2E0,#F1F6E8);border:2px solid #7A9A5C">
       <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-2">
-          <span class="text-xl">📱</span>
-          <span class="font-bold text-dark text-sm">背景運作已啟動</span>
-        </div>
+        <span class="font-black text-slate text-sm">背景運作已啟動</span>
         <button onclick="document.getElementById('iosBackgroundBanner').style.display='none'"
                 class="text-muted text-sm w-7 h-7 rounded-full bg-white/60 flex items-center justify-center">✕</button>
       </div>
-
-      <!-- GPS 狀態 -->
-      <div class="gps-status-pill mb-4" id="gpsStatusPill" data-status="ok">
-        📡 GPS 訊號正常
-      </div>
-
       <div class="space-y-2">
-        <div class="ios-step">
-          <div class="step-num">1</div>
+        <div class="flex gap-3 p-3 rounded-2xl" style="background:rgba(255,255,255,.6)">
+          <div class="w-7 h-7 rounded-full bg-forest text-white font-bold text-xs flex items-center justify-center flex-shrink-0">1</div>
           <div>
-            <p class="text-sm font-bold text-dark">調低螢幕亮度</p>
-            <p class="text-xs text-muted mt-0.5">從右上角下滑控制中心調至最低，省電保持畫面亮著</p>
+            <p class="text-sm font-bold text-slate">調低螢幕亮度</p>
+            <p class="text-xs text-muted mt-0.5">從控制中心調至最低，省電同時保持畫面亮著</p>
           </div>
         </div>
-        <div class="ios-step">
-          <div class="step-num">2</div>
+        <div class="flex gap-3 p-3 rounded-2xl" style="background:rgba(255,255,255,.6)">
+          <div class="w-7 h-7 rounded-full bg-forest text-white font-bold text-xs flex items-center justify-center flex-shrink-0">2</div>
           <div>
-            <p class="text-sm font-bold text-dark">不要切換到其他 App</p>
-            <p class="text-xs text-muted mt-0.5">保持本頁在前景，可搭配「自動鎖定 → 永不」使用</p>
+            <p class="text-sm font-bold text-slate">不要切換到其他 App</p>
+            <p class="text-xs text-muted mt-0.5">保持本頁在前景，可搭配「自動鎖定 → 永不」</p>
           </div>
         </div>
-        <div class="ios-step" style="background:#FFF3D6">
-          <div class="step-num" style="background:#F5A623">⚡</div>
+        <div class="flex gap-3 p-3 rounded-2xl" style="background:#FBE6A1">
+          <div class="w-7 h-7 rounded-full bg-sunshine text-slate font-bold text-xs flex items-center justify-center flex-shrink-0">⚡</div>
           <div>
-            <p class="text-sm font-bold text-dark">靜音保活已啟動</p>
-            <p class="text-xs text-muted mt-0.5">App 正在播放極低音量音頻，幫助 iOS 維持 GPS 運作</p>
+            <p class="text-sm font-bold text-slate">靜音保活已啟動</p>
+            <p class="text-xs text-muted mt-0.5">App 正在播放極低音量音頻，幫助 iOS 維持 GPS</p>
           </div>
         </div>
       </div>
     </div>
 
     <!-- ===== Wake Lock 警告 ===== -->
-    <div id="wakeLockWarning"
-         class="hidden rounded-2xl p-4 border-2 border-warm text-sm font-medium leading-snug"
-         style="background:#FFF3D6;color:#8B5E00">
-      ⚠️ <strong>此裝置不支援螢幕常亮鎖定</strong>，請手動保持螢幕開啟，否則 GPS 可能中斷。
+    <div id="wakeLockWarning" class="hidden rounded-2xl p-4 text-sm font-bold leading-snug"
+         style="background:#FBE6A1;color:#8B5E00;border:2px solid #F5C543">
+      ⚠️ 此裝置不支援螢幕常亮鎖定，請手動保持螢幕開啟。
     </div>
 
-    <!-- ===== 背景限制說明（折疊） ===== -->
-    <details class="bg-card rounded-3xl shadow-card overflow-hidden">
-      <summary class="flex items-center justify-between px-5 py-4 cursor-pointer list-none select-none">
+    <!-- ===== 背景限制說明 ===== -->
+    <details class="bg-card rounded-4xl shadow-card overflow-hidden">
+      <summary class="flex items-center justify-between px-5 py-4 cursor-pointer select-none">
         <div class="flex items-center gap-2">
-          <span class="text-base">💡</span>
-          <span class="font-bold text-sm text-dark">關於背景執行限制</span>
+          <!-- 燈泡圖示 -->
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M9 2 C5.7 2 3 4.7 3 8 C3 10.4 4.4 12.5 6.5 13.5 L6.5 15 L11.5 15 L11.5 13.5 C13.6 12.5 15 10.4 15 8 C15 4.7 12.3 2 9 2Z" fill="#F5C543"/>
+            <rect x="6.5" y="15" width="5" height="1.5" rx=".75" fill="#C27B00"/>
+            <rect x="7" y="17" width="4" height="1.5" rx=".75" fill="#C27B00"/>
+          </svg>
+          <span class="font-black text-sm text-slate">關於背景執行限制</span>
         </div>
         <span class="text-muted text-xs details-arrow">▼</span>
       </summary>
-      <div class="px-5 pb-5 space-y-2 text-xs text-muted leading-relaxed border-t border-gray-100 pt-3">
-        <p><strong class="text-dark">Android Chrome：</strong>螢幕關閉後 GPS 數分鐘內暫停，建議保持畫面開啟。</p>
-        <p><strong class="text-dark">iOS Safari：</strong>切換到背景後 GPS 立即停止。本 App 已啟用靜音音頻保活技術。</p>
-        <p><strong class="text-dark">GPS 看門狗：</strong>若 45 秒未收到 GPS，App 自動重新啟動定位。</p>
-        <p><strong class="text-dark">根本解法：</strong>打包成 Capacitor 原生 App 可取得完整背景定位權限。</p>
+      <div class="px-5 pb-5 space-y-2 text-xs text-muted leading-relaxed border-t border-hairline pt-3">
+        <p><strong class="text-slate">Android Chrome：</strong>螢幕關閉後 GPS 數分鐘內暫停。</p>
+        <p><strong class="text-slate">iOS Safari：</strong>切換到背景後 GPS 立即停止。本 App 已啟用靜音音頻保活。</p>
+        <p><strong class="text-slate">GPS 看門狗：</strong>若 45 秒未收到 GPS 自動重啟。</p>
       </div>
     </details>
 
-    <!-- 底部留白 -->
-    <div class="h-4"></div>
+    <div class="h-2"></div>
   </main>
+
+  <!-- ===================== 底部導航列 ===================== -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+      <!-- Home -->
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <path d="M2 11 L11 2.5 L20 11 L20 20 L14 20 L14 14 L8 14 L8 20 L2 20 Z"
+              fill="currentColor" rx="2"/>
+      </svg>
+      <span class="nav-label">Home</span>
+    </button>
+
+    <button class="nav-item" onclick="document.getElementById('map').scrollIntoView({behavior:'smooth',block:'center'})">
+      <!-- Map -->
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <path d="M2 4 L8 7 L14 4 L20 7 L20 18 L14 15 L8 18 L2 15 Z"
+              stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+        <line x1="8"  y1="7"  x2="8"  y2="18" stroke="currentColor" stroke-width="1.8"/>
+        <line x1="14" y1="4"  x2="14" y2="15" stroke="currentColor" stroke-width="1.8"/>
+      </svg>
+      <span class="nav-label">Explore</span>
+    </button>
+
+    <!-- 中央浮鈕（啟動） -->
+    <button class="nav-add" onclick="document.getElementById('btnStart').click()" aria-label="啟動">
+      <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+        <line x1="15" y1="6" x2="15" y2="24" stroke="#2E2A26" stroke-width="3" stroke-linecap="round"/>
+        <line x1="6"  y1="15" x2="24" y2="15" stroke="#2E2A26" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+    </button>
+
+    <button class="nav-item" onclick="document.getElementById('searchInput').focus();document.getElementById('searchInput').scrollIntoView({behavior:'smooth',block:'center'})">
+      <!-- Journey -->
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <rect x="4" y="2" width="14" height="18" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/>
+        <line x1="8" y1="7"  x2="14" y2="7"  stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="8" y1="15" x2="11" y2="15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <span class="nav-label">Journey</span>
+    </button>
+
+    <button class="nav-item" onclick="document.getElementById('soundSection').scrollIntoView({behavior:'smooth'})">
+      <!-- Profile -->
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <circle cx="11" cy="8"  r="4"
+                stroke="currentColor" stroke-width="1.8" fill="none"/>
+        <path d="M3 20 C3 15.6 6.6 13 11 13 C15.4 13 19 15.6 19 20"
+              stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      </svg>
+      <span class="nav-label">Profile</span>
+    </button>
+  </nav>
 
   <!-- ===== 到站警報 Overlay ===== -->
   <div class="alert-overlay" id="alertOverlay" role="alertdialog" aria-modal="true" style="display:none">
     <div class="alert-box">
-      <div class="alert-icon mb-3" id="alertIcon">🎯</div>
-      <h2 class="text-2xl font-black text-dark mb-2" id="alertTitle">快到站了！</h2>
+      <div class="alert-icon mb-3" id="alertIcon">
+        <!-- 預設警示圖 → app.js 會用 innerHTML 覆蓋 -->
+        🎯
+      </div>
+      <h2 class="text-2xl font-black text-slate mb-2" id="alertTitle">快到站了！</h2>
       <p class="text-sm text-muted leading-relaxed mb-6" id="alertMessage">距離目的地還有 XXX 公尺，請準備下車！</p>
       <div class="space-y-3">
         <button onclick="dismissAlert()"
-                class="w-full py-4 rounded-2xl text-white font-black text-base transition-all active:scale-95"
-                style="background:linear-gradient(135deg,#A8D5BA,#7EBFA0);box-shadow:0 4px 16px rgba(168,213,186,.5)">
-          ✅ 我已醒來，停止提醒
+                class="w-full py-4 rounded-full text-slate font-black text-base transition-all active:scale-95"
+                style="background:#F5C543;box-shadow:0 10px 28px rgba(245,197,67,.4)">
+          我已醒來，停止提醒
         </button>
         <button id="btnContinue" onclick="continueMonitoring()"
-                class="w-full py-4 rounded-2xl font-bold text-sm border-2 border-gray-200 text-muted transition-all active:scale-95">
-          🔄 繼續監聽（加強模式）
+                class="w-full py-3 rounded-full font-bold text-sm border-2 border-hairline text-muted transition-all active:scale-95">
+          繼續監聽（加強模式）
         </button>
       </div>
     </div>
@@ -733,15 +1017,32 @@
 
   <!-- Leaflet JS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <!-- 主程式 -->
   <script src="app.js"></script>
 
   <script>
-    // details 箭頭動畫
+    // 週日期條
+    (function renderDayStrip() {
+      const labels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const today  = new Date();
+      const todayDow = (today.getDay() + 6) % 7;
+      const strip = document.getElementById('dayStrip');
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + (i - todayDow));
+        const cell = document.createElement('div');
+        cell.className = 'day-cell' + (i === todayDow ? ' active' : '');
+        cell.innerHTML =
+          `<span class="day-label">${labels[i]}</span>` +
+          `<span class="day-circle">${d.getDate()}</span>`;
+        strip.appendChild(cell);
+      }
+    })();
+
+    // details 箭頭
     document.querySelectorAll('details').forEach(d => {
       d.addEventListener('toggle', () => {
-        const arrow = d.querySelector('.details-arrow');
-        if (arrow) arrow.textContent = d.open ? '▲' : '▼';
+        const a = d.querySelector('.details-arrow');
+        if (a) a.textContent = d.open ? '▲' : '▼';
       });
     });
   </script>

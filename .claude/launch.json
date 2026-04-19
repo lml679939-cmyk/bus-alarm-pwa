@@ -4,7 +4,7 @@
     {
       "name": "bus-alarm-pwa",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8765"],
+      "runtimeArgs": ["C:/Users/user/Downloads/生成式AI人文導論/我自己想要開發的專案/bus-alarm-pwa/serve.py"],
       "port": 8765
     }
   ]

@@ -781,11 +781,15 @@ function safeVibrate(pattern) {
 /** 測試震動（讓使用者確認裝置支援） */
 function testVibrate() {
   if (!('vibrate' in navigator)) {
-    showToast('⚠️ 您的裝置不支援震動（iOS 不支援此功能）');
+    showToast('❌ 此瀏覽器不支援震動 API（iOS 不支援）');
     return;
   }
-  navigator.vibrate([200, 100, 200, 100, 400]);
-  showToast('📳 震動測試中…感受到震動即代表正常');
+  const result = navigator.vibrate([300, 100, 300, 100, 500]);
+  if (result === false) {
+    showToast('⚠️ 震動被系統封鎖（請確認：頁面是否在前景？裝置震動是否開啟？）');
+  } else {
+    showToast('📳 震動指令已送出（有感受到震動即正常）');
+  }
 }
 
 function startVibrateLoop(pattern) {

@@ -72,7 +72,7 @@ bus-alarm-pwa/
 | 螢幕保持亮 | Wake Lock API |
 | iOS 背景保活 | 靜音音頻 Hack（AudioContext 持續輸出極低音量） |
 | GPS 看門狗 | setInterval 每 15s 檢查，45s 無訊號則重啟 |
-| UI | Tailwind CSS CDN + 自訂卡片風格（暖色系） |
+| UI | Tailwind CSS CDN + Journal-app 風格（米色背景、黃色主色、全 SVG 圖示） |
 
 ### 後端（Vercel Serverless）
 
@@ -179,12 +179,12 @@ const State = {
 
 ## Service Worker 快取版本
 
-目前版本：`v2.4.0`
+目前版本：`v2.5.0`
 
 > **重要**：每次修改靜態資源（html/css/js）後，必須更新 `sw.js` 頂部的 `CACHE_VERSION` 才能讓使用者強制更新快取。
 
 ```js
-const CACHE_VERSION = 'v2.4.0';  // 改這裡
+const CACHE_VERSION = 'v2.5.0';  // 改這裡
 ```
 
 ---
@@ -197,6 +197,47 @@ const CACHE_VERSION = 'v2.4.0';  // 改這裡
 | iOS 鎖定畫面 | 需 Web Push 才能喚醒（需 iOS 16.4+ 且安裝到主畫面） |
 | Android 背景 | `navigator.vibrate()` 在頁面不在前景時可能被系統封鎖 |
 | OSRM API | 免費公開服務，偶爾會慢或無回應，有 fallback 機制 |
+
+---
+
+## UI 設計系統（v2.5.0 大改版）
+
+參考 Journal-app 設計風格全面重構 `index.html`。
+
+### 色彩調色盤
+
+| 變數名 | 色碼 | 用途 |
+|--------|------|------|
+| `canvas` | `#EDEAE3` | 主背景米色 |
+| `sunshine` | `#F5C543` | 主色黃（CTA、今日日期圈、Toggle on） |
+| `forest` | `#7A9A5C` | 綠色（GPS、位置、目的地） |
+| `lilac` | `#E3DBF1` | 紫色（音效、通知） |
+| `blush` | `#F7D7D1` | 粉色（距離快速卡） |
+| `slate` | `#2E2A26` | 主文字深棕 |
+| `muted` | `#857F75` | 次要文字 |
+
+### 版面元件
+
+- **頂部**：「Hi, 旅客」問候 + 一週日期條（今日黃色圓圈高亮）
+- **英雄卡**：黃色漸層 + 公車插畫 SVG（山丘、公車、太陽笑臉、白雲）
+- **Quick Settings**：兩張小卡（粉色靶心 / 紫色音符）
+- **距離大數字**：5.5rem 粗體，對應 journal-app「420」風格
+- **底部導航**：5欄固定 nav（Home/Explore/+/Journey/Profile），中央黃色浮動圓鈕
+
+### SVG 圖示系統（全部自製，無 emoji）
+
+所有圖示均為純 SVG，不使用 emoji。音符圖示使用外部提供的 path 資料：
+
+```
+音符 viewBox="130 140 475 475"
+path 完整 d 值在 index.html 中（搜尋 "441.910217" 即可定位）
+原始來源：736×736 單一八分音符形狀，莖+旗+音符頭一體成形
+```
+
+鈴鐺結構（聲音按鈕 & 通知 toggle 一致）：
+```
+手柄 rect → 鈴身 path（左右對稱）→ 底邊 ellipse → 鈴舌 circle（小）
+```
 
 ---
 
@@ -217,6 +258,7 @@ const CACHE_VERSION = 'v2.4.0';  // 改這裡
 - [x] PWA（manifest + Service Worker + 可安裝）
 - [x] 震動測試按鈕（含診斷訊息）
 - [x] 頁面可正常滑動（修復 touch-action + overflow 衝突）
+- [x] **UI 全面改版**：Journal-app 風格，一週日期條、英雄插畫卡、底部 5 欄 nav、全 SVG 圖示（v2.5.0）
 
 ---
 

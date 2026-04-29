@@ -844,10 +844,10 @@
     <!-- ===== 主 CTA 按鈕 ===== -->
     <section class="px-1 space-y-3 pt-2">
       <button id="btnStart" onclick="startMonitoring()"
-              class="w-full py-5 rounded-full text-slate text-lg font-black tracking-wide transition-all active:scale-95 flex items-center justify-center gap-3 leading-none"
-              style="background:#F5C543;box-shadow:0 10px 28px rgba(245,197,67,.45)">
+              class="w-full py-5 rounded-full text-slate text-lg font-black tracking-wide transition-all active:scale-95"
+              style="background:#F5C543;box-shadow:0 10px 28px rgba(245,197,67,.45);display:flex;align-items:center;justify-content:center;gap:12px;line-height:1">
         <!-- 出發圖示（火箭/公車） -->
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" style="flex:0 0 28px;width:28px;height:28px;display:block">
+        <svg viewBox="0 0 28 28" fill="none" style="flex:0 0 28px;width:28px;height:28px">
           <!-- 公車側面 -->
           <rect x="2"  y="10" width="22" height="13" rx="4" fill="white" fill-opacity=".9"/>
           <rect x="4"  y="7"  width="16" height="6"  rx="3" fill="white" fill-opacity=".75"/>
@@ -860,7 +860,7 @@
           <line x1="25" y1="16" x2="27" y2="16" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".5"/>
           <line x1="25" y1="20" x2="28" y2="20" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".7"/>
         </svg>
-        啟動到站提醒
+        <span style="display:inline-block;line-height:1">啟動到站提醒</span>
       </button>
       <button id="btnStop" onclick="stopMonitoring()"
               class="w-full py-5 rounded-full text-white text-lg font-black tracking-wide transition-all active:scale-95 flex items-center justify-center gap-3"

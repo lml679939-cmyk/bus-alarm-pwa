@@ -11,7 +11,7 @@
 'use strict';
 
 /* ---- 版本號：每次更新靜態資源時遞增，觸發快取更新 ---- */
-const CACHE_VERSION   = 'v2.5.1';
+const CACHE_VERSION   = 'v2.5.2';
 const CACHE_STATIC    = `bus-alarm-static-${CACHE_VERSION}`;
 const CACHE_CDN       = `bus-alarm-cdn-${CACHE_VERSION}`;
 const CACHE_TILES     = 'bus-alarm-tiles';   // 地圖圖磚（不帶版本，長期共用）

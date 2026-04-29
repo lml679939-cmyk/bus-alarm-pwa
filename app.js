@@ -1701,7 +1701,7 @@ function updateRadiusUI() {
 
 function updateMonitoringButtons() {
   const s = State.isMonitoring;
-  document.getElementById('btnStart').style.display = s ? 'none' : 'block';
+  document.getElementById('btnStart').style.display = s ? 'none' : 'flex';
   document.getElementById('btnStop').style.display  = s ? 'block' : 'none';
   document.getElementById('map').classList.toggle('monitoring', s);
 }
